@@ -2,4 +2,8 @@
 sample
 
 sample_data_out/*
-!sample_data_out/.gitkeep 
+!sample_data_out/.gitkeep
+
+# Blender files - typically large binary files
+*.blend
+*.blend1

@@ -1,0 +1,38 @@
+{
+  "bone_names": [
+    "RootBack",
+    "BackMid",
+    "MidTip"
+  ],
+  "control_point_names": [
+    "Root",
+    "Back",
+    "Middle",
+    "Tip"
+  ],
+  "num_vertices": 489,
+  "num_control_points": 4,
+  "num_bones": 3,
+  "armature_structure": {
+    "type": "3-bone chain with 4 control points",
+    "bones": [
+      "RootBack",
+      "BackMid",
+      "MidTip"
+    ],
+    "control_points": [
+      "Root",
+      "Back",
+      "Middle",
+      "Tip"
+    ],
+    "mapping": {
+      "Root": "head of RootBack bone",
+      "Back": "tail of RootBack / head of BackMid",
+      "Middle": "tail of BackMid / head of MidTip",
+      "Tip": "tail of MidTip bone"
+    }
+  },
+  "export_timestamp": "47",
+  "blender_file": "/home/timoite/ICT-FaceKit/Blender/checkpoint1110blend.blend"
+}
