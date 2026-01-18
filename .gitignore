@@ -7,3 +7,64 @@ sample_data_out/*
 # Blender files - typically large binary files
 *.blend
 *.blend1
+*.sblend.blend
+
+# Model checkpoints - very large files (1GB+)
+tongue_scripts/inversion_checkpoints/
+*.pt
+*.pth
+*.ckpt
+
+# Large data directories
+data/beat_cache/
+tongue_scripts/26/wav/
+tongue_scripts/26/wav_split/
+tongue_scripts/26/npy_split/
+tongue_scripts/exports/
+
+# Audio files (can be large)
+*.wav
+*.mp3
+*.flac
+
+# Video files
+*.mp4
+*.avi
+*.mov
+
+# GIF exports
+*.gif
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Python
+*.egg-info/
+dist/
+build/
+*.pyc
+*.pyo
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Large numpy arrays (if they appear at root)
+*.npy
+# But allow specific data directories
+!data/*.npy
+!optimization_project/data/*.npy
+!tongue/npy*.npy
+!tongue_scripts/normalising_vectors/*.npy
+!data/blender_export_lbs/*.npy

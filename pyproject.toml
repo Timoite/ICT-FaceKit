@@ -5,13 +5,53 @@ description = "ICT morphable face model with tongue articulation optimization"
 readme = "README.md"
 requires-python = ">=3.9,<3.12"
 dependencies = [
-	"numpy>=1.26",
+	"numpy>=1.24",
 	"scipy>=1.11",
 	"trimesh>=4.0",
 	"matplotlib>=3.8",
+	"imageio>=2.30",
+	"imageio-ffmpeg>=0.4",
+	"tqdm>=4.60",
+]
+
+[project.optional-dependencies]
+# Pyrender rendering (faster, CPU-based)
+pyrender = [
+	"pyrender>=0.1.45",
+	"PyOpenGL>=3.1",
+]
+# PyTorch3D rendering pipeline (requires torch first)
+pytorch3d = [
+	"torch>=1.13",
+	"torchaudio>=0.13",
+	"pytorch3d>=0.7",
+]
+# WavLM speech inversion model
+wavlm = [
+	"torch>=1.13",
+	"torchaudio>=0.13",
+	"transformers>=4.30",
+	"loralib>=0.1",
+]
+# BEAT dataset downloading
+beat = [
+	"huggingface_hub>=0.20",
+]
+# Full feature set
+all = [
+	"pyrender>=0.1.45",
+	"PyOpenGL>=3.1",
+	"torch>=1.13",
+	"torchaudio>=0.13",
+	"pytorch3d>=0.7",
+	"transformers>=4.30",
+	"loralib>=0.1",
+	"huggingface_hub>=0.20",
 ]
 
 [dependency-groups]
 dev = [
 	"pytest>=8.0",
+	"black>=23.0",
+	"flake8>=6.0",
 ]

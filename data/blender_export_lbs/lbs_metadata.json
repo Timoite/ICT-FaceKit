@@ -1,0 +1,15 @@
+{
+  "bone_names": [
+    "RootBack",
+    "BackMid",
+    "MidTip"
+  ],
+  "files": {
+    "vertices": "tongue_verts_rest.npy",
+    "weights": "tongue_weights.npy",
+    "rest_matrices": "bone_rest_matrices.npy",
+    "rest_heads": "bone_rest_heads.npy",
+    "rest_tails": "bone_rest_tails.npy"
+  },
+  "description": "Raw LBS data extracted from Blender. Vertices are transformed to Armature Space. Matrices are bone.matrix_local (Armature space)."
+}
