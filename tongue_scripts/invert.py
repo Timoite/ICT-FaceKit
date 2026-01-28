@@ -15,6 +15,16 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 inv_model = WavLMWrapper().to(device)
 state_dict = torch.load("inversion_checkpoints/lora_multispeaker_consistency_alpha_0.25_threshold_0_vctk_vvn_4tonguepoints")
 inv_model.load_state_dict(state_dict)
+inv_model.eval()
+
+#data,sr = torchaudio.load("./inputs/test.wav")
+#
+#with torch.no_grad():
+#    ema = inv_model(data.to(device)).squeeze().detach().cpu().numpy()
+#
+#ema = sig.filtfilt(b,a,ema,axis=0)
+#
+#np.save("outputs/motion.npy",ema)
 
 base_dir = "./26/"
 
