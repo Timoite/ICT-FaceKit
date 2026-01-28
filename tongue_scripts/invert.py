@@ -7,7 +7,7 @@ from tqdm import tqdm
 import numpy as np
 
 #8Hz low-pass filter
-b,a = sig.butter(5,8,"low",fs=50)
+b,a = sig.butter(5,10,"low",fs=50)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -17,35 +17,35 @@ state_dict = torch.load("inversion_checkpoints/lora_multispeaker_consistency_alp
 inv_model.load_state_dict(state_dict)
 inv_model.eval()
 
-#data,sr = torchaudio.load("./inputs/test.wav")
+data,sr = torchaudio.load("/home/charlie/fourth_year_projects/tim/ICT-FaceKit/beat_data/1/1_wayne_0_75_75.wav")
+
+with torch.no_grad():
+    ema = inv_model(data.to(device)).squeeze().detach().cpu().numpy()
+
+ema = sig.filtfilt(b,a,ema,axis=0)
+
+np.save("outputs/1_wayne_0_75_75.npy",ema)
+
+#base_dir = "./26/"
 #
-#with torch.no_grad():
-#    ema = inv_model(data.to(device)).squeeze().detach().cpu().numpy()
+#files = os.listdir(os.path.join(base_dir,"wav"))
 #
-#ema = sig.filtfilt(b,a,ema,axis=0)
+#for f in tqdm(files):
+#    wav,sr = torchaudio.load(os.path.join(base_dir,"wav",f))
 #
-#np.save("outputs/motion.npy",ema)
-
-base_dir = "./26/"
-
-files = os.listdir(os.path.join(base_dir,"wav"))
-
-for f in tqdm(files):
-    wav,sr = torchaudio.load(os.path.join(base_dir,"wav",f))
-
-    split_len = 160000
-    splits = wav.shape[1]//split_len
-
-    for i in range(splits):
-        wav_split = wav[:,i*split_len:(i+1)*split_len]
-
-        torchaudio.save(os.path.join(base_dir,"wav_split",f[:-4]+f"_{i}"+".wav"),wav_split,sr)
-
-        #Inversion
-        with torch.no_grad():
-            ema = inv_model(wav_split.to(device)).squeeze().detach().cpu().numpy()
-
-        #Low-pass filter
-        ema = sig.filtfilt(b,a,ema,axis=0)
-
-        np.save(os.path.join(base_dir,"npy_split",f[:-4]+"_{i}"+".npy"),ema)
+#    split_len = 160000
+#    splits = wav.shape[1]//split_len
+#
+#    for i in range(splits):
+#        wav_split = wav[:,i*split_len:(i+1)*split_len]
+#
+#        torchaudio.save(os.path.join(base_dir,"wav_split",f[:-4]+f"_{i}"+".wav"),wav_split,sr)
+#
+#        #Inversion
+#        with torch.no_grad():
+#            ema = inv_model(wav_split.to(device)).squeeze().detach().cpu().numpy()
+#
+#        #Low-pass filter
+#        ema = sig.filtfilt(b,a,ema,axis=0)
+#
+#        np.save(os.path.join(base_dir,"npy_split",f[:-4]+"_{i}"+".npy"),ema)
