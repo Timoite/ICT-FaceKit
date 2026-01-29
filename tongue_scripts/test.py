@@ -40,10 +40,10 @@ FPS             = 50
 MAX_SECONDS     = 10
 TONGUE_CONFIG   = {
     "rotation_deg": 5,
-    "thickness":    1,
+    "thickness":    1.2,
     "shift_y":      0,
     "shift_z":      0,
-    "std_scalar":   0.25 # Scalar from your working file (was 0.15 in uploaded, 0.25 in current)
+    "std_scalar":   0.20 # Scalar from your working file (was 0.15 in uploaded, 0.25 in current)
 }
 
 # --- INDICES ---
@@ -282,127 +282,6 @@ def run_matplotlib_debug(tongue_rig, ema_seq):
     plt.close()
 
 
-#def run_pyrender_video(face_model, tongue_rig, ema_seq, face_seq):
-#    print("Starting Pyrender Video (Split Material Method)...")
-#    W, H = 800, 600
-#    r = pyrender.OffscreenRenderer(W, H)
-#    video = cv2.VideoWriter(TEMP_VIDEO, cv2.VideoWriter_fourcc(*'mp4v'), FPS, (W, H))
-#    
-#    # --- 1. SETUP CAMERA ---
-#    # Moved back (z=35) to see the full context
-#    if CUTOUT_MODE:
-#        eye = np.array([20, -2, 4], dtype=np.float32)
-#        target = np.array([0, -3, 2], dtype=np.float32)
-#    else:
-#        eye = np.array([0, 0, 35], dtype=np.float32) 
-#        target = np.array([0, -2, 0], dtype=np.float32)
-#        
-#    up = np.array([0, 1, 0], dtype=np.float32)
-#    z = eye - target; z /= np.linalg.norm(z)
-#    x = np.cross(up, z); x /= np.linalg.norm(x)
-#    y = np.cross(z, x)
-#    cam_pose = np.eye(4)
-#    cam_pose[:3, :3] = np.column_stack((x, y, z))
-#    cam_pose[:3, 3] = eye
-#
-#    # --- 2. DEFINE MATERIALS ---
-#    # Material A: FACE (Grey, Matte/Dry)
-#    mat_face = pyrender.MetallicRoughnessMaterial(
-#        baseColorFactor=[0.5, 0.5, 0.5, 1.0], # Grey
-#        metallicFactor=0.0,
-#        roughnessFactor=0.8, # Rough/Dry
-#        alphaMode='OPAQUE'
-#    )
-#
-#    # Material B: TONGUE (Pink, Wet/Glossy)
-#    # Pink color: [0.8, 0.3, 0.3] -> approx RGB [204, 76, 76]
-#    mat_tongue = pyrender.MetallicRoughnessMaterial(
-#        baseColorFactor=[0.8, 0.3, 0.3, 1.0], 
-#        metallicFactor=0.0,
-#        roughnessFactor=0.2, # Low roughness = Wet/Shiny
-#        alphaMode='OPAQUE'
-#    )
-#
-#    # --- 3. SETUP SCENE & LIGHTS ---
-#    scene_base = pyrender.Scene(bg_color=[0, 0, 0])
-#    
-#    # SpotLight (Key Light): Angled down into the mouth
-#    spot_pose = cam_pose.copy()
-#    spot_pose[:3, 3] += [0, 10, -5] 
-#    spot_light = pyrender.SpotLight(color=np.ones(3), intensity=500, 
-#                                    innerConeAngle=np.pi/4, outerConeAngle=np.pi/4)
-#    
-#    # Fill Light (Dim): Softens shadows
-#    fill_light = pyrender.PointLight(color=[1.0, 1.0, 1.0], intensity=400)
-#    
-#    scene_base.add(pyrender.PerspectiveCamera(yfov=np.pi/3.0), pose=cam_pose)
-#    scene_base.add(spot_light, pose=spot_pose)
-#    scene_base.add(fill_light, pose=cam_pose)
-#
-#    frames = min(len(ema_seq), len(face_seq), int(MAX_SECONDS * FPS))
-#    
-#    # Pre-calculate tongue mask for indices (Optimization)
-#    # We need to know which FACES belong to the TONGUE vertices
-#    # 1. Create a boolean map of all vertices
-#    is_tongue_vert = np.zeros(len(face_model.neutral_verts), dtype=bool)
-#    is_tongue_vert[tongue_rig.global_indices] = True
-#    
-#    for i in range(frames):
-#        if i % 25 == 0: print(f"Rendering frame {i}/{frames}...")
-#        
-#        # A. Deform
-#        weights = {name: val for name, val in zip(face_model.expression_names, face_seq[i])}
-#        verts = face_model.deform(weights).copy()
-#        
-#        t_verts, _, _ = tongue_rig.deform(ema_seq[i])
-#        verts[tongue_rig.global_indices] = t_verts
-#        
-#        # B. Handle Cutout & Face Splitting
-#        current_faces = face_model.faces
-#        if CUTOUT_MODE:
-#            # Hide right side of face
-#            valid_mask = verts[:, 0] < 0.1
-#            valid_faces_mask = valid_mask[current_faces].all(axis=1)
-#            current_faces = current_faces[valid_faces_mask]
-#
-#        # C. Split Geometry: Tongue Faces vs Body Faces
-#        # A face is a "Tongue Face" if ALL its vertices are in the tongue slice
-#        face_vert_is_tongue = is_tongue_vert[current_faces] # shape (N_faces, 3)
-#        is_tongue_face = face_vert_is_tongue.all(axis=1)    # shape (N_faces,)
-#        
-#        faces_tongue = current_faces[is_tongue_face]
-#        faces_body   = current_faces[~is_tongue_face]
-#        
-#        # D. Create Two Meshes
-#        # We pass the FULL vertex list to both, but different face lists.
-#        # Trimesh/Pyrender handles the unused vertices automatically.
-#        nodes = []
-#        
-#        if len(faces_body) > 0:
-#            tm_body = trimesh.Trimesh(verts, faces_body, process=False)
-#            mesh_body = pyrender.Mesh.from_trimesh(tm_body, material=mat_face, smooth=True)
-#            # Ensure double-sided rendering so we see inside the mouth
-#            if mesh_body.primitives:
-#                for p in mesh_body.primitives: p.material.doubleSided = True
-#            nodes.append(scene_base.add(mesh_body))
-#            
-#        if len(faces_tongue) > 0:
-#            tm_tongue = trimesh.Trimesh(verts, faces_tongue, process=False)
-#            mesh_tongue = pyrender.Mesh.from_trimesh(tm_tongue, material=mat_tongue, smooth=True)
-#            if mesh_tongue.primitives:
-#                for p in mesh_tongue.primitives: p.material.doubleSided = True
-#            nodes.append(scene_base.add(mesh_tongue))
-#
-#        # E. Render
-#        color, _ = r.render(scene_base)
-#        video.write(cv2.cvtColor(color, cv2.COLOR_RGB2BGR))
-#        
-#        # F. Cleanup (Remove nodes for next frame)
-#        for n in nodes:
-#            scene_base.remove_node(n)
-#
-#    video.release()
-#    r.delete()
 
 def run_pyrender_video(face_model, tongue_rig, ema_seq, face_seq):
     print("Starting Pyrender Video (Tongue + Gums)...")
