@@ -281,22 +281,20 @@ def run_matplotlib_debug(tongue_rig, ema_seq):
     anim.save(TEMP_VIDEO, writer=FFMpegWriter(fps=FPS))
     plt.close()
 
-
-
 def run_pyrender_video(face_model, tongue_rig, ema_seq, face_seq):
-    print("Starting Pyrender Video (Tongue + Gums)...")
+    print("Starting Pyrender Video (Tri-Color Split)...")
     W, H = 800, 600
     r = pyrender.OffscreenRenderer(W, H)
     video = cv2.VideoWriter(TEMP_VIDEO, cv2.VideoWriter_fourcc(*'mp4v'), FPS, (W, H))
-
+    
     # --- 1. SETUP CAMERA ---
     if CUTOUT_MODE:
         eye = np.array([20, -2, 4], dtype=np.float32)
         target = np.array([0, -3, 2], dtype=np.float32)
     else:
-        eye = np.array([0, 0, 35], dtype=np.float32)
+        eye = np.array([0, 0, 35], dtype=np.float32) 
         target = np.array([0, -2, 0], dtype=np.float32)
-
+        
     up = np.array([0, 1, 0], dtype=np.float32)
     z = eye - target; z /= np.linalg.norm(z)
     x = np.cross(up, z); x /= np.linalg.norm(x)
@@ -306,61 +304,72 @@ def run_pyrender_video(face_model, tongue_rig, ema_seq, face_seq):
     cam_pose[:3, 3] = eye
 
     # --- 2. DEFINE MATERIALS ---
-    # Material A: SKIN (Grey, Matte/Dry)
+    
+    # A: SKIN (Grey, Matte)
     mat_skin = pyrender.MetallicRoughnessMaterial(
-        baseColorFactor=[0.5, 0.5, 0.5, 1.0],
+        baseColorFactor=[0.5, 0.5, 0.5, 1.0], 
         metallicFactor=0.0,
-        roughnessFactor=0.8,
+        roughnessFactor=0.8, 
         alphaMode='OPAQUE'
     )
 
-    # Material B: FLESH (Tongue + Gums -> Pink, Wet/Glossy)
-    mat_flesh = pyrender.MetallicRoughnessMaterial(
-        baseColorFactor=[0.8, 0.3, 0.3, 1.0], # Pinkish Red
+    # B: TONGUE (Lighter Pink, Wet)
+    # RGB [255, 150, 150] approx -> Light Pink
+    mat_tongue = pyrender.MetallicRoughnessMaterial(
+        baseColorFactor=[1.0, 0.6, 0.6, 1.0], 
         metallicFactor=0.0,
-        roughnessFactor=0.2, # Wet/Shiny
+        roughnessFactor=0.2, 
+        alphaMode='OPAQUE'
+    )
+
+    # C: GUMS (Darker Pink, Wet)
+    # RGB [180, 50, 50] approx -> Deep Red/Pink
+    mat_gums = pyrender.MetallicRoughnessMaterial(
+        baseColorFactor=[0.7, 0.2, 0.2, 1.0], 
+        metallicFactor=0.0,
+        roughnessFactor=0.2, 
         alphaMode='OPAQUE'
     )
 
     # --- 3. SETUP SCENE & LIGHTS ---
     scene_base = pyrender.Scene(bg_color=[0, 0, 0])
-
-    # SpotLight (Key Light)
+    
     spot_pose = cam_pose.copy()
-    spot_pose[:3, 3] += [0, 10, -5]
-    spot_light = pyrender.SpotLight(color=np.ones(3), intensity=500,
-                                    innerConeAngle=np.pi/4, outerConeAngle=np.pi/4)
-
-    # Fill Light
-    fill_light = pyrender.PointLight(color=[1.0, 1.0, 1.0], intensity=2.0)
-
+    spot_pose[:3, 3] += [0, 10, -5] 
+    spot_light = pyrender.SpotLight(color=np.ones(3), intensity=100, 
+                                    innerConeAngle=np.pi/8, outerConeAngle=np.pi/4)
+    fill_light = pyrender.PointLight(color=[1.0, 1.0, 1.0], intensity=400)
+    
     scene_base.add(pyrender.PerspectiveCamera(yfov=np.pi/3.0), pose=cam_pose)
     scene_base.add(spot_light, pose=spot_pose)
     scene_base.add(fill_light, pose=cam_pose)
 
     frames = min(len(ema_seq), len(face_seq), int(MAX_SECONDS * FPS))
-
-    # --- 4. PRE-CALCULATE FLESH MASK ---
-    # We combine the Tongue indices AND the Gum indices into one "Flesh" mask
-    is_flesh_vert = np.zeros(len(face_model.neutral_verts), dtype=bool)
-
-    # A. Add Tongue Indices (from Rig)
-    is_flesh_vert[tongue_rig.global_indices] = True
-
-    # B. Add Gum Indices (User provided: 14062 -> 17038)
-    # Using slice(14062, 17039) to include 17038
-    is_flesh_vert[14062:17039] = True
+    
+    # --- 4. PRE-CALCULATE MASKS ---
+    
+    # Mask 1: Tongue Vertices
+    is_tongue_vert = np.zeros(len(face_model.neutral_verts), dtype=bool)
+    is_tongue_vert[tongue_rig.global_indices] = True
+    
+    # Mask 2: Gum Vertices (14062 -> 17038)
+    is_gum_vert = np.zeros(len(face_model.neutral_verts), dtype=bool)
+    is_gum_vert[14062:17039] = True
+    
+    # (Optional) Ensure mutual exclusivity if ranges overlap
+    # Here we prioritize Tongue over Gums if they overlap
+    is_gum_vert[is_tongue_vert] = False
 
     for i in range(frames):
         if i % 25 == 0: print(f"Rendering frame {i}/{frames}...")
-
+        
         # Deform
         weights = {name: val for name, val in zip(face_model.expression_names, face_seq[i])}
         verts = face_model.deform(weights).copy()
-
+        
         t_verts, _, _ = tongue_rig.deform(ema_seq[i])
         verts[tongue_rig.global_indices] = t_verts
-
+        
         # Handle Cutout
         current_faces = face_model.faces
         if CUTOUT_MODE:
@@ -368,41 +377,61 @@ def run_pyrender_video(face_model, tongue_rig, ema_seq, face_seq):
             valid_faces_mask = valid_mask[current_faces].all(axis=1)
             current_faces = current_faces[valid_faces_mask]
 
-        # SPLIT GEOMETRY: Flesh vs Skin
-        # A face is "Flesh" if ALL its vertices are in the is_flesh_vert mask
-        face_vert_is_flesh = is_flesh_vert[current_faces]
-        is_flesh_face = face_vert_is_flesh.all(axis=1)
-
-        faces_flesh = current_faces[is_flesh_face]
-        faces_skin  = current_faces[~is_flesh_face]
-
+        # SPLIT GEOMETRY: Tongue vs Gums vs Skin
+        
+        # Check membership for every face
+        # A face belongs to a group if ALL its vertices belong to that group
+        
+        face_vert_is_tongue = is_tongue_vert[current_faces]
+        is_tongue_face = face_vert_is_tongue.all(axis=1)
+        
+        face_vert_is_gum = is_gum_vert[current_faces]
+        is_gum_face = face_vert_is_gum.all(axis=1)
+        
+        # Anything not Tongue or Gum is Skin
+        is_skin_face = ~(is_tongue_face | is_gum_face)
+        
+        faces_tongue = current_faces[is_tongue_face]
+        faces_gum    = current_faces[is_gum_face]
+        faces_skin   = current_faces[is_skin_face]
+        
         nodes = []
-
-        # Render Skin (Grey)
+        
+        # 1. Skin Mesh
         if len(faces_skin) > 0:
             tm_skin = trimesh.Trimesh(verts, faces_skin, process=False)
             mesh_skin = pyrender.Mesh.from_trimesh(tm_skin, material=mat_skin, smooth=True)
             if mesh_skin.primitives:
                 for p in mesh_skin.primitives: p.material.doubleSided = True
             nodes.append(scene_base.add(mesh_skin))
+            
+        # 2. Tongue Mesh
+        if len(faces_tongue) > 0:
+            tm_tongue = trimesh.Trimesh(verts, faces_tongue, process=False)
+            mesh_tongue = pyrender.Mesh.from_trimesh(tm_tongue, material=mat_tongue, smooth=True)
+            if mesh_tongue.primitives:
+                for p in mesh_tongue.primitives: p.material.doubleSided = True
+            nodes.append(scene_base.add(mesh_tongue))
 
-        # Render Flesh (Tongue + Gums -> Pink)
-        if len(faces_flesh) > 0:
-            tm_flesh = trimesh.Trimesh(verts, faces_flesh, process=False)
-            mesh_flesh = pyrender.Mesh.from_trimesh(tm_flesh, material=mat_flesh, smooth=True)
-            if mesh_flesh.primitives:
-                for p in mesh_flesh.primitives: p.material.doubleSided = True
-            nodes.append(scene_base.add(mesh_flesh))
+        # 3. Gum Mesh
+        if len(faces_gum) > 0:
+            tm_gum = trimesh.Trimesh(verts, faces_gum, process=False)
+            mesh_gum = pyrender.Mesh.from_trimesh(tm_gum, material=mat_gums, smooth=True)
+            if mesh_gum.primitives:
+                for p in mesh_gum.primitives: p.material.doubleSided = True
+            nodes.append(scene_base.add(mesh_gum))
 
         # Render & Cleanup
         color, _ = r.render(scene_base)
         video.write(cv2.cvtColor(color, cv2.COLOR_RGB2BGR))
-
+        
         for n in nodes:
             scene_base.remove_node(n)
 
     video.release()
     r.delete()
+
+
 
 def merge_audio():
     if not os.path.exists(TEMP_VIDEO): return
