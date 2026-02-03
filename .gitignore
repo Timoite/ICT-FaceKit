@@ -77,5 +77,7 @@ ADFA_EVALUATION/Visual_Speech_Recognition_for_Multiple_Languages/data/
 ADFA_EVALUATION/Visual_Speech_Recognition_for_Multiple_Languages/transcript*/
 ADFA_EVALUATION/Visual_Speech_Recognition_for_Multiple_Languages/transcripts/
 ADFA_EVALUATION/ground_truth_transcripts/
+ADFA_EVALUATION/wer_plots/
+ADFA_EVALUATION/*.csv
 LRS3_V_WER19.1/
 lm_en_subword/
