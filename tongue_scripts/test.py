@@ -9,6 +9,7 @@ import sys
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation, FFMpegWriter
 from scipy.interpolate import make_interp_spline, interp1d
+from pathlib import Path
 
 # --- IMPORT USER MODULES ---
 try:
@@ -24,16 +25,21 @@ except ImportError:
 RENDER_MODE     = 'FULL_FACE' # Options: 'MATPLOTLIB' (Debug) or 'FULL_FACE' (Video)
 CUTOUT_MODE     = False        # Set to True to see the sagittal cut view
 
-# --- PATHS ---
-FACE_MODEL_DIR  = "../FaceXModel"
-MOTION_PATH     = "outputs/1_wayne_0_75_75.npy"       
-BS_JSON_PATH    = "inputs/1_wayne_0_75_75.json"  
-AUDIO_PATH      = "inputs/1_wayne_0_75_75.wav"
-STD_PATH        = "normalising_vectors/JW13_4points_std.npy"
+# --- PATHS (Absolute paths for robust execution from any directory) ---
+SCRIPT_DIR = Path(__file__).parent.absolute()
+PROJECT_ROOT = SCRIPT_DIR.parent
+
+FACE_MODEL_DIR  = str(PROJECT_ROOT / "FaceXModel")
+MOTION_PATH     = str(SCRIPT_DIR / "outputs" / "1_wayne_0_75_75.npy")
+BS_JSON_PATH    = str(SCRIPT_DIR / "inputs" / "1_wayne_0_75_75.json")
+AUDIO_PATH      = str(SCRIPT_DIR / "inputs" / "1_wayne_0_75_75.wav")
+STD_PATH        = str(SCRIPT_DIR / "normalising_vectors" / "JW13_4points_std.npy")
 
 # --- OUTPUTS ---
-OUTPUT_VIDEO    = "tongue_hybrid_deformation.mp4"
-TEMP_VIDEO      = "temp_visuals.mp4"
+OUTPUT_DIR = SCRIPT_DIR / "outputs"
+OUTPUT_DIR.mkdir(exist_ok=True)
+OUTPUT_VIDEO    = str(OUTPUT_DIR / "tongue_hybrid_deformation.mp4")
+TEMP_VIDEO      = str(OUTPUT_DIR / "temp_visuals.mp4")
 
 # --- SETTINGS ---
 FPS             = 50
