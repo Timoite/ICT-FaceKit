@@ -1,5 +1,5 @@
 import numpy as np
-import pudb
+# import pudb  # Debugger - not needed for production
 import trimesh
 import pyrender
 import cv2
@@ -43,7 +43,7 @@ TEMP_VIDEO      = str(OUTPUT_DIR / "temp_visuals.mp4")
 
 # --- SETTINGS ---
 FPS             = 50
-MAX_SECONDS     = 10
+MAX_SECONDS     = 15  # Render first 15 seconds
 TONGUE_CONFIG   = {
     "rotation_deg": 5,
     "thickness":    1.2,
@@ -350,7 +350,7 @@ def run_pyrender_video(face_model, tongue_rig, ema_seq, face_seq):
     scene_base.add(spot_light, pose=spot_pose)
     scene_base.add(fill_light, pose=cam_pose)
 
-    frames = min(len(ema_seq), len(face_seq), int(MAX_SECONDS * FPS))
+    frames = min(len(ema_seq), len(face_seq)) if MAX_SECONDS is None else min(len(ema_seq), len(face_seq), int(MAX_SECONDS * FPS))
     
     # --- 4. PRE-CALCULATE MASKS ---
     

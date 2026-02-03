@@ -68,3 +68,14 @@ build/
 !tongue/npy*.npy
 !tongue_scripts/normalising_vectors/*.npy
 !data/blender_export_lbs/*.npy
+
+# Param test files
+tongue_scripts/tongue_param_tests/
+
+# ADFA Evaluation models and data
+ADFA_EVALUATION/Visual_Speech_Recognition_for_Multiple_Languages/data/
+ADFA_EVALUATION/Visual_Speech_Recognition_for_Multiple_Languages/transcript*/
+ADFA_EVALUATION/Visual_Speech_Recognition_for_Multiple_Languages/transcripts/
+ADFA_EVALUATION/ground_truth_transcripts/
+LRS3_V_WER19.1/
+lm_en_subword/
