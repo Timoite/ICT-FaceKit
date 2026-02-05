@@ -21,6 +21,8 @@ tongue_scripts/26/wav/
 tongue_scripts/26/wav_split/
 tongue_scripts/26/npy_split/
 tongue_scripts/exports/
+tongue_scripts/inputs/
+tongue_scripts/outputs/
 
 # Audio files (can be large)
 *.wav
@@ -81,3 +83,4 @@ ADFA_EVALUATION/wer_plots/
 ADFA_EVALUATION/*.csv
 LRS3_V_WER19.1/
 lm_en_subword/
+ADFA_EVALUATION/data/beat_cache_speaker1/

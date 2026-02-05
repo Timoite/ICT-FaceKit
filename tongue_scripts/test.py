@@ -22,8 +22,8 @@ except ImportError:
 # ==========================================
 # CONFIGURATION
 # ==========================================
-RENDER_MODE     = 'FULL_FACE' # Options: 'MATPLOTLIB' (Debug) or 'FULL_FACE' (Video)
-CUTOUT_MODE     = False        # Set to True to see the sagittal cut view
+RENDER_MODE     = 'MATPLOTLIB' # Options: 'MATPLOTLIB' (Debug) or 'FULL_FACE' (Video)
+CUTOUT_MODE     = True        # Set to True to see the sagittal cut view
 
 # --- PATHS (Absolute paths for robust execution from any directory) ---
 SCRIPT_DIR = Path(__file__).parent.absolute()
@@ -38,7 +38,7 @@ STD_PATH        = str(SCRIPT_DIR / "normalising_vectors" / "JW13_4points_std.npy
 # --- OUTPUTS ---
 OUTPUT_DIR = SCRIPT_DIR / "outputs"
 OUTPUT_DIR.mkdir(exist_ok=True)
-OUTPUT_VIDEO    = str(OUTPUT_DIR / "tongue_hybrid_deformation.mp4")
+OUTPUT_VIDEO    = str(OUTPUT_DIR / "tongue_hybrid_deformation_cut.mp4")
 TEMP_VIDEO      = str(OUTPUT_DIR / "temp_visuals.mp4")
 
 # --- SETTINGS ---

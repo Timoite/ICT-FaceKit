@@ -20,8 +20,19 @@ from espnet.nets.pytorch_backend.e2e_asr_transformer import E2E
 
 
 class AVSR(torch.nn.Module):
-    def __init__(self, modality, model_path, model_conf, rnnlm=None, rnnlm_conf=None,
-        penalty=0., ctc_weight=0.1, lm_weight=0., beam_size=40, device="cuda:0"):
+    def __init__(
+        self,
+        modality,
+        model_path,
+        model_conf,
+        rnnlm=None,
+        rnnlm_conf=None,
+        penalty=0.0,
+        ctc_weight=0.1,
+        lm_weight=0.0,
+        beam_size=40,
+        device="cuda:0",
+    ):
         super(AVSR, self).__init__()
         self.device = device
 
@@ -39,21 +50,43 @@ class AVSR(torch.nn.Module):
         if labels_type == "char":
             self.token_list = self.train_args.char_list
         elif labels_type == "unigram5000":
-            file_path = os.path.join(os.path.dirname(__file__), "tokens", "unigram5000_units.txt")
-            self.token_list = ['<blank>'] + [word.split()[0] for word in open(file_path).read().splitlines()] + ['<eos>']
+            file_path = os.path.join(
+                os.path.dirname(__file__), "tokens", "unigram5000_units.txt"
+            )
+            lines = open(file_path).read().splitlines()
+            self.token_list = (
+                ["<blank>"] + [word.split()[0] for word in lines] + ["<eos>"]
+            )
         self.odim = len(self.token_list)
 
         self.model = E2E(self.odim, self.train_args)
-        self.model.load_state_dict(torch.load(model_path, map_location=lambda storage, loc: storage, weights_only=False))
+        self.model.load_state_dict(
+            torch.load(
+                model_path,
+                map_location=lambda storage, loc: storage,
+                weights_only=False,
+            )
+        )
         self.model.to(device=self.device).eval()
 
-        self.beam_search = get_beam_search_decoder(self.model, self.token_list, rnnlm, rnnlm_conf, penalty, ctc_weight, lm_weight, beam_size)
+        self.beam_search = get_beam_search_decoder(
+            self.model,
+            self.token_list,
+            rnnlm,
+            rnnlm_conf,
+            penalty,
+            ctc_weight,
+            lm_weight,
+            beam_size,
+        )
         self.beam_search.to(device=self.device).eval()
-        
+
     def infer(self, data):
         with torch.no_grad():
             if isinstance(data, tuple):
-                enc_feats = self.model.encode(data[0].to(self.device), data[1].to(self.device))
+                enc_feats = self.model.encode(
+                    data[0].to(self.device), data[1].to(self.device)
+                )
             else:
                 enc_feats = self.model.encode(data.to(self.device))
             nbest_hyps = self.beam_search(enc_feats)
@@ -63,7 +96,16 @@ class AVSR(torch.nn.Module):
         return transcription.replace("<eos>", "")
 
 
-def get_beam_search_decoder(model, token_list, rnnlm=None, rnnlm_conf=None, penalty=0, ctc_weight=0.1, lm_weight=0., beam_size=40):
+def get_beam_search_decoder(
+    model,
+    token_list,
+    rnnlm=None,
+    rnnlm_conf=None,
+    penalty=0,
+    ctc_weight=0.1,
+    lm_weight=0.0,
+    beam_size=40,
+):
     sos = model.odim - 1
     eos = model.odim - 1
     scorers = model.scorers()
