@@ -1,0 +1,42 @@
+{
+  "dataset_id": "1_wayne_0_10_10",
+  "analysis_fps": 50.0,
+  "segment_start": 0.0,
+  "segment_duration": 10.0,
+  "jaw_index": 26,
+  "lip_shapes_used": [
+    "mouthClose",
+    "mouthFunnel",
+    "mouthPucker",
+    "mouthShrugUpper",
+    "mouthShrugLower",
+    "mouthRollUpper",
+    "mouthRollLower",
+    "mouthLeft",
+    "mouthRight"
+  ],
+  "tongue_anchor_idx": 3,
+  "tongue_axis": "y",
+  "max_lag_s": 0.5,
+  "best_lag_frames": 21,
+  "best_lag_s": 0.42,
+  "corr_at_zero": -0.05254344457252653,
+  "corr_at_best": 0.015041914768517017,
+  "phone_filter": [
+    "L",
+    "T",
+    "D",
+    "K",
+    "G",
+    "N",
+    "S",
+    "Z",
+    "CH",
+    "JH",
+    "SH",
+    "TH",
+    "DH",
+    "R"
+  ],
+  "n_phone_intervals": 231
+}
