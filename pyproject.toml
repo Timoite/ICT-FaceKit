@@ -12,6 +12,7 @@ dependencies = [
 	"imageio>=2.30",
 	"imageio-ffmpeg>=0.4",
 	"tqdm>=4.60",
+	"pyrender>=0.1.45",
 ]
 
 [project.optional-dependencies]
