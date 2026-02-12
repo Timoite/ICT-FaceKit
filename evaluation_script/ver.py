@@ -62,7 +62,7 @@ def calculate_ver(ground_truth, hypothesis):
     
     return error_rate, ref_visemes, hyp_visemes
 
-# --- YOUR DATA ---
+# Data
 gt = "the most angry event in my childhood is that my dad planned to take me to disneyland to have a fun time with him however on the day before he told me that because of overtime at work he can't go with me he promised me many many times they will take me for my birthday celebration however it didn't come true i was pretty upset and what makes me angry about it as this is not the only one time there's something happens"
 inf = "because as you've seen in fucking show it's a big game and it's doubled in its size so it's diamonds and those are on the tables in the room because i know it's time to work i know it's time to work i've used to be very friendly times to see the tables of my friends in the room and those are technically damaged i was very upset i wouldn't be in reality of that and see not the only one time it seems to happen"
 
