@@ -22,22 +22,23 @@ from scipy.interpolate import interp1d
 
 # Setup paths
 SCRIPT_DIR = Path(__file__).parent.absolute()
-sys.path.insert(0, str(SCRIPT_DIR))
+PROJECT_ROOT = SCRIPT_DIR.parent
+TONGUE_ANIMATION_DIR = SCRIPT_DIR / "tongue_animation"
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+if str(TONGUE_ANIMATION_DIR) not in sys.path:
+    sys.path.insert(0, str(TONGUE_ANIMATION_DIR))
 
-# Import existing modules
-try:
-    from face_model_io_trimesh import load_face_model_trimesh
-    from render_face_animation_trimesh import map_beat_to_ict_names, load_animation
-    from test import process_beat_data, load_ema_motion, FaceKitTongueRig, TONGUE_CONFIG
-except ImportError:
-    # Try parent dir
-    sys.path.insert(0, str(SCRIPT_DIR.parent))
-    from face_model_io_trimesh import load_face_model_trimesh
-    from render_face_animation_trimesh import map_beat_to_ict_names, load_animation
-    from tongue_scripts.test import process_beat_data, load_ema_motion, FaceKitTongueRig, TONGUE_CONFIG
+from face_model_io_trimesh import load_face_model_trimesh
+from render_face_animation_trimesh import map_beat_to_ict_names, load_animation
+from generate_tongue_animation import (
+    process_beat_data,
+    load_ema_motion,
+    FaceKitTongueRig,
+    TONGUE_CONFIG,
+)
 
 # Define paths
-PROJECT_ROOT = SCRIPT_DIR.parent
 FACE_MODEL_DIR = str(PROJECT_ROOT / "FaceXModel")
 MOTION_PATH = str(SCRIPT_DIR / "outputs" / "1_wayne_0_75_75.npy")
 BS_JSON_PATH = str(SCRIPT_DIR / "inputs" / "1_wayne_0_75_75.json")

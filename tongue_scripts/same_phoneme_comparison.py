@@ -10,7 +10,7 @@
 #     "opencv-python",
 # ]
 # ///
-"""Unified pipeline for sagittal/oblique render, merge, and phoneme clips. The final result is a directory with clips of different articulations at 0.1x by default"""
+"""Unified pipeline for sagittal/oblique render, merge, and phoneme clips."""
 
 from __future__ import annotations
 
@@ -27,27 +27,26 @@ import numpy as np
 
 SCRIPT_DIR = Path(__file__).parent.resolve()
 PROJECT_ROOT = SCRIPT_DIR.parent
-sys.path.insert(0, str(SCRIPT_DIR))
-
-try:
-    from face_model_io_trimesh import load_face_model_trimesh
-    from test import TONGUE_CONFIG, FaceKitTongueRig, load_ema_motion, process_beat_data
-except ImportError:
+TONGUE_ANIMATION_DIR = SCRIPT_DIR / "tongue_animation"
+if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-    from tongue_scripts.face_model_io_trimesh import load_face_model_trimesh
-    from tongue_scripts.generate_tongue_animation import (
-        TONGUE_CONFIG,
-        FaceKitTongueRig,
-        load_ema_motion,
-        process_beat_data,
-    )
+if str(TONGUE_ANIMATION_DIR) not in sys.path:
+    sys.path.insert(0, str(TONGUE_ANIMATION_DIR))
+
+from face_model_io_trimesh import load_face_model_trimesh
+from generate_tongue_animation import (
+    process_beat_data,
+    load_ema_motion,
+    FaceKitTongueRig,
+    TONGUE_CONFIG,
+)
 
 TONGUE_SLICE = slice(16611, 17039)
 ANCHOR_INDICES = [16661, 16696, 16755, 16758]
 BONE_INDICES = [16661, 16757]
 FPS = 25
 TONGUE_SOURCE_FPS = 50
-TONGUE_SHIFT_SECONDS = 0.12
+TONGUE_SHIFT_SECONDS = 0.120
 
 
 @dataclass
@@ -106,9 +105,7 @@ def parse_phones(path: Path) -> List[PhoneInterval]:
     for idx, s, e, txt in _parse_textgrid_tier(path, "phones"):
         if txt.strip():
             out.append(
-                PhoneInterval(
-                    idx=idx, start=s, end=e, label=txt, normalized=normalize_phone(txt)
-                )
+                PhoneInterval(idx=idx, start=s, end=e, label=txt, normalized=normalize_phone(txt))
             )
     return out
 
@@ -157,9 +154,7 @@ def _extend_sequence(seq: np.ndarray, frames: int) -> np.ndarray:
     return np.concatenate([seq, pad], axis=0)
 
 
-def _resample_ema_motion(
-    ema_seq: np.ndarray, source_fps: float, target_fps: float
-) -> np.ndarray:
+def _resample_ema_motion(ema_seq: np.ndarray, source_fps: float, target_fps: float) -> np.ndarray:
     if np.isclose(source_fps, target_fps):
         return ema_seq
     n_frames = len(ema_seq)
@@ -223,9 +218,7 @@ def _load_face_and_sequences(
             )
         face_seq[:, jaw_idx] = np.maximum(0.0, raw_vals - min_val)
     else:
-        print(
-            "  [Warning] 'jawOpen' not found in expression names. Skipping lip correction."
-        )
+        print("  [Warning] 'jawOpen' not found in expression names. Skipping lip correction.")
 
     print("Setting up tongue rig ...")
     tongue_rig = FaceKitTongueRig(
@@ -303,9 +296,7 @@ def render_sagittal(args: argparse.Namespace) -> None:
         return face_scat, gum_scat, tongue_scat, ema_line, ema_anch
 
     def update(frame_idx: int):
-        weights = {
-            n: v for n, v in zip(face_model.expression_names, face_seq[frame_idx])
-        }
+        weights = {n: v for n, v in zip(face_model.expression_names, face_seq[frame_idx])}
         verts = face_model.deform(weights).copy()
 
         face_pts = verts[face_midline][:, [2, 1]]
@@ -391,9 +382,7 @@ def render_oblique(args: argparse.Namespace) -> None:
     renderer = pyrender.OffscreenRenderer(W, H)
     output_path = Path(args.output_video)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    video = cv2.VideoWriter(
-        str(output_path), cv2.VideoWriter_fourcc(*"mp4v"), FPS, (W, H)
-    )
+    video = cv2.VideoWriter(str(output_path), cv2.VideoWriter_fourcc(*"mp4v"), FPS, (W, H))
 
     eye = np.array([0.0, -2.0, 35.0], dtype=np.float32)
     target = np.array([0.0, -2.0, 0.0], dtype=np.float32)
@@ -452,9 +441,7 @@ def render_oblique(args: argparse.Namespace) -> None:
         if i % 25 == 0:
             print(f"Rendering frame {i}/{frames} ...")
 
-        weights = {
-            name: val for name, val in zip(face_model.expression_names, face_seq[i])
-        }
+        weights = {name: val for name, val in zip(face_model.expression_names, face_seq[i])}
         verts = face_model.deform(weights).copy()
 
         t_verts, _, _ = tongue_rig.deform(ema_seq[i])
@@ -478,9 +465,7 @@ def render_oblique(args: argparse.Namespace) -> None:
 
         if len(faces_skin) > 0:
             tm_skin = trimesh.Trimesh(verts, faces_skin, process=False)
-            mesh_skin = pyrender.Mesh.from_trimesh(
-                tm_skin, material=mat_skin, smooth=True
-            )
+            mesh_skin = pyrender.Mesh.from_trimesh(tm_skin, material=mat_skin, smooth=True)
             if mesh_skin.primitives:
                 for p in mesh_skin.primitives:
                     p.material.doubleSided = True
@@ -488,9 +473,7 @@ def render_oblique(args: argparse.Namespace) -> None:
 
         if len(faces_tongue) > 0:
             tm_tongue = trimesh.Trimesh(verts, faces_tongue, process=False)
-            mesh_tongue = pyrender.Mesh.from_trimesh(
-                tm_tongue, material=mat_tongue, smooth=True
-            )
+            mesh_tongue = pyrender.Mesh.from_trimesh(tm_tongue, material=mat_tongue, smooth=True)
             if mesh_tongue.primitives:
                 for p in mesh_tongue.primitives:
                     p.material.doubleSided = True
@@ -498,9 +481,7 @@ def render_oblique(args: argparse.Namespace) -> None:
 
         if len(faces_gum) > 0:
             tm_gum = trimesh.Trimesh(verts, faces_gum, process=False)
-            mesh_gum = pyrender.Mesh.from_trimesh(
-                tm_gum, material=mat_gums, smooth=True
-            )
+            mesh_gum = pyrender.Mesh.from_trimesh(tm_gum, material=mat_gums, smooth=True)
             if mesh_gum.primitives:
                 for p in mesh_gum.primitives:
                     p.material.doubleSided = True
@@ -788,20 +769,12 @@ def main() -> None:
     ob_parser.set_defaults(func=render_oblique)
 
     comb_parser = subparsers.add_parser("combine", help="Combine sagittal + oblique")
-    comb_parser.add_argument(
-        "--sagittal", required=True, help="Sagittal video (with audio)"
-    )
-    comb_parser.add_argument(
-        "--oblique", required=True, help="Oblique video (no audio)"
-    )
-    comb_parser.add_argument(
-        "--output", required=True, help="Output side-by-side video"
-    )
+    comb_parser.add_argument("--sagittal", required=True, help="Sagittal video (with audio)")
+    comb_parser.add_argument("--oblique", required=True, help="Oblique video (no audio)")
+    comb_parser.add_argument("--output", required=True, help="Output side-by-side video")
     comb_parser.set_defaults(func=combine_videos)
 
-    cut_parser = subparsers.add_parser(
-        "cut-clips", help="Cut phoneme clips with context"
-    )
+    cut_parser = subparsers.add_parser("cut-clips", help="Cut phoneme clips with context")
     cut_parser.add_argument("--dataset-id", default="1_wayne_0_75_75")
     cut_parser.add_argument(
         "--beat-root",

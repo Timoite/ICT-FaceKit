@@ -14,15 +14,15 @@ import pyrender
 import imageio
 from pathlib import Path
 
-# Add Scripts directory to path
-script_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, script_dir)
+SCRIPT_DIR = Path(__file__).parent.resolve()
+PROJECT_ROOT = SCRIPT_DIR.parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 try:
-    from face_model_io_trimesh import load_face_model_trimesh
+    from tongue_scripts.tongue_animation.face_model_io_trimesh import load_face_model_trimesh
 except ImportError:
-    print("CRITICAL: 'face_model_io_trimesh.py' not found.")
-    sys.exit(1)
+    from face_model_io_trimesh import load_face_model_trimesh
 
 # ============================================================================
 # HELPER: Blendshape Mapping

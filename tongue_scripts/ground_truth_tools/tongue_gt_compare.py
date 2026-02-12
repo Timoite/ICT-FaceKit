@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.11"
 # dependencies = [
@@ -35,16 +34,20 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 SCRIPT_DIR = Path(__file__).parent.resolve()
-PROJECT_ROOT = SCRIPT_DIR.parent
-sys.path.insert(0, str(SCRIPT_DIR))
-
-try:
-    from face_model_io_trimesh import load_face_model_trimesh
-    from test import load_ema_motion, FaceKitTongueRig, TONGUE_CONFIG
-except ImportError:
+TONGUE_SCRIPTS_DIR = SCRIPT_DIR.parent
+PROJECT_ROOT = TONGUE_SCRIPTS_DIR.parent
+TONGUE_ANIMATION_DIR = TONGUE_SCRIPTS_DIR / "tongue_animation"
+if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-    from tongue_scripts.face_model_io_trimesh import load_face_model_trimesh
-    from tongue_scripts.test import load_ema_motion, FaceKitTongueRig, TONGUE_CONFIG
+if str(TONGUE_ANIMATION_DIR) not in sys.path:
+    sys.path.insert(0, str(TONGUE_ANIMATION_DIR))
+
+from face_model_io_trimesh import load_face_model_trimesh
+from generate_tongue_animation import (
+    load_ema_motion,
+    FaceKitTongueRig,
+    TONGUE_CONFIG,
+)
 
 TONGUE_SLICE = slice(16611, 17039)
 ANCHOR_INDICES = [16661, 16696, 16755, 16758]
@@ -95,16 +98,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Compare tongue EMA vs manual GT")
     parser.add_argument(
         "--gt-json",
-        default=str(SCRIPT_DIR / "jaw_tongue_sync" / "1_wayne_0_112_112_tongue_gt.json"),
+        default=str(TONGUE_SCRIPTS_DIR / "jaw_tongue_sync" / "1_wayne_0_112_112_tongue_gt.json"),
         help="Path to GT JSON produced by tongue_gt_editor.py",
     )
-    parser.add_argument("--tongue-npy-dir", default=str(SCRIPT_DIR / "outputs"))
+    parser.add_argument("--tongue-npy-dir", default=str(TONGUE_SCRIPTS_DIR / "outputs"))
     parser.add_argument(
         "--std-path",
-        default=str(SCRIPT_DIR / "normalising_vectors" / "JW13_4points_std.npy"),
+        default=str(TONGUE_SCRIPTS_DIR / "normalising_vectors" / "JW13_4points_std.npy"),
     )
     parser.add_argument("--face-model-dir", default=str(PROJECT_ROOT / "FaceXModel"))
-    parser.add_argument("--output-dir", default=str(SCRIPT_DIR / "jaw_tongue_sync"))
+    parser.add_argument("--output-dir", default=str(TONGUE_SCRIPTS_DIR / "jaw_tongue_sync"))
     parser.add_argument("--max-shift-s", type=float, default=0.5, help="Max shift in seconds")
     parser.add_argument("--no-plot", action="store_true")
     args = parser.parse_args()

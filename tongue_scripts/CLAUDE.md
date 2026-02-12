@@ -19,8 +19,8 @@ The rendered facial animations should be reasonably intelligible (lower WER = be
 | **Grid search** | `test_tongue_grid_search_25fps.py` | Parameter sweep for optimal WER |
 | **Analyze lag** | `jaw_tongue_sync_analysis.py` | Correlation analysis between jaw and tongue |
 | **Phoneme probe** | `phoneme_lag_probe.py` | Per-phoneme lag estimation |
-| **GT editor** | `tongue_gt_editor.py` | Interactive ground truth tongue positions |
-| **GT compare** | `tongue_gt_compare.py` | Compare EMA vs ground truth, find optimal shift |
+| **GT editor** | `ground_truth_tools/tongue_gt_editor.py` | Interactive ground truth tongue positions |
+| **GT compare** | `ground_truth_tools/tongue_gt_compare.py` | Compare EMA vs ground truth, find optimal shift |
 | **Render shifted** | `jaw_tongue_sync_render_shift.py` | Render with time-shifted tongue |
 
 ### Common Commands
@@ -43,7 +43,7 @@ uv run python tongue_scripts/jaw_tongue_sync_analysis.py --dataset-id 1_wayne_0_
 uv run python tongue_scripts/phoneme_lag_probe.py --dataset-id 1_wayne_0_75_75 --clip-idx 63
 
 # Compare EMA against ground truth
-uv run python tongue_scripts/tongue_gt_compare.py --gt-json jaw_tongue_sync/clip_gt.json
+uv run python tongue_scripts/ground_truth_tools/tongue_gt_compare.py --gt-json jaw_tongue_sync/clip_gt.json
 
 # Render with shifted tongue
 uv run python tongue_scripts/jaw_tongue_sync_render_shift.py --shift-seconds 0.05
@@ -175,7 +175,7 @@ uv run python tongue_scripts/jaw_tongue_sync_analysis.py \
 
 ```bash
 # Interactive editor for MRI-grounded tongue positions
-uv run python tongue_scripts/tongue_gt_editor.py \
+uv run python tongue_scripts/ground_truth_tools/tongue_gt_editor.py \
     --dataset-id 1_wayne_0_75_75
 
 # Output: *_tongue_gt.json with per-phoneme anchor positions
@@ -185,7 +185,7 @@ uv run python tongue_scripts/tongue_gt_editor.py \
 
 ```bash
 # Compare EMA vs GT, sweep global shift
-uv run python tongue_scripts/tongue_gt_compare.py \
+uv run python tongue_scripts/ground_truth_tools/tongue_gt_compare.py \
     --gt-json jaw_tongue_sync/clip_tongue_gt.json \
     --max-shift-s 0.5
 

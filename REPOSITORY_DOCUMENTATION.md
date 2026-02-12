@@ -54,7 +54,7 @@ Generated on: 2026-02-11
   - Current task: Verify temporal alignment between facial keyframes and tongue keyframes
   - Progress tracking: Initial correlation analysis showed near-zero global correlation
   - Ground truth editor implemented with interactive matplotlib GUI
-- **Related Files**: tongue_scripts/jaw_tongue_sync_analysis.py, tongue_scripts/tongue_gt_editor.py
+- **Related Files**: tongue_scripts/jaw_tongue_sync_script/jaw_tongue_sync_analysis.py, tongue_scripts/ground_truth_tools/tongue_gt_editor.py
 - **Notes**: Last updated 2026-02-10
 
 ### `/home/timoite/Documents/ICT-FaceKit/.gitignore`
@@ -378,7 +378,7 @@ Generated on: 2026-02-11
   - std_scalar: [0.10, 0.25, 0.40]
 - **Notes**: 25fps rendering with speed_rate=1.0; integrated VSR and WER
 
-### `/home/timoite/Documents/ICT-FaceKit/tongue_scripts/tongue_gt_compare.py`
+### `/home/timoite/Documents/ICT-FaceKit/tongue_scripts/ground_truth_tools/tongue_gt_compare.py`
 - **File Type**: Python Script (Executable)
 - **Purpose**: Compare actual EMA motion with ground truth tongue positions
 - **Key Functions**:
@@ -386,11 +386,11 @@ Generated on: 2026-02-11
   - `compute_per_anchor_error()`: Error per anchor in (Y, Z)
   - `sweep_global_shift()`: Find optimal global shift to minimize error
 - **Dependencies**: numpy, matplotlib, json
-- **Related Files**: tongue_gt_editor.py (outputs _tongue_gt.json), EMA .npy files
+- **Related Files**: tongue_scripts/ground_truth_tools/tongue_gt_editor.py (outputs _tongue_gt.json), EMA .npy files
 - **Output**: _gt_compare.json, _gt_compare.png
 - **Notes**: Reports per-class best shifts for diagnostic analysis
 
-### `/home/timoite/Documents/ICT-FaceKit/tongue_scripts/tongue_gt_editor.py`
+### `/home/timoite/Documents/ICT-FaceKit/tongue_scripts/ground_truth_tools/tongue_gt_editor.py`
 - **File Type**: Python Script (Executable)
 - **Purpose**: Interactive GUI editor for defining ground truth tongue positions per phoneme
 - **Key Classes/Functions**:

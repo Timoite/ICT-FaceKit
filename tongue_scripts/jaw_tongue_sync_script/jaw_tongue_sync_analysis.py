@@ -19,16 +19,20 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 SCRIPT_DIR = Path(__file__).parent.resolve()
-PROJECT_ROOT = SCRIPT_DIR.parent
-sys.path.insert(0, str(SCRIPT_DIR))
-
-try:
-    from face_model_io_trimesh import load_face_model_trimesh
-    from test import process_beat_data, load_ema_motion, FaceKitTongueRig, TONGUE_CONFIG
-except ImportError:
+PROJECT_ROOT = SCRIPT_DIR.parent.parent
+TONGUE_ANIMATION_DIR = PROJECT_ROOT / "tongue_scripts" / "tongue_animation"
+if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-    from tongue_scripts.face_model_io_trimesh import load_face_model_trimesh
-    from tongue_scripts.test import process_beat_data, load_ema_motion, FaceKitTongueRig, TONGUE_CONFIG
+if str(TONGUE_ANIMATION_DIR) not in sys.path:
+    sys.path.insert(0, str(TONGUE_ANIMATION_DIR))
+
+from face_model_io_trimesh import load_face_model_trimesh
+from generate_tongue_animation import (
+    process_beat_data,
+    load_ema_motion,
+    FaceKitTongueRig,
+    TONGUE_CONFIG,
+)
 
 
 TONGUE_SLICE = slice(16611, 17039)

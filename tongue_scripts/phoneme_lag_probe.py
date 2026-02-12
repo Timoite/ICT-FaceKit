@@ -16,15 +16,19 @@ import matplotlib.pyplot as plt
 
 SCRIPT_DIR = Path(__file__).parent.resolve()
 PROJECT_ROOT = SCRIPT_DIR.parent
-sys.path.insert(0, str(SCRIPT_DIR))
-
-try:
-    from face_model_io_trimesh import load_face_model_trimesh
-    from test import process_beat_data, load_ema_motion, FaceKitTongueRig, TONGUE_CONFIG
-except ImportError:
+TONGUE_ANIMATION_DIR = SCRIPT_DIR / "tongue_animation"
+if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-    from tongue_scripts.face_model_io_trimesh import load_face_model_trimesh
-    from tongue_scripts.test import process_beat_data, load_ema_motion, FaceKitTongueRig, TONGUE_CONFIG
+if str(TONGUE_ANIMATION_DIR) not in sys.path:
+    sys.path.insert(0, str(TONGUE_ANIMATION_DIR))
+
+from face_model_io_trimesh import load_face_model_trimesh
+from generate_tongue_animation import (
+    process_beat_data,
+    load_ema_motion,
+    FaceKitTongueRig,
+    TONGUE_CONFIG,
+)
 
 TONGUE_SLICE = slice(16611, 17039)
 ANCHOR_INDICES = [16661, 16696, 16755, 16758]
@@ -106,12 +110,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--invert-tongue",
         action="store_true",
-        help="Invert tongue signal polarity for analysis",
+        default=True,
+        help="Invert tongue signal polarity for analysis (default: enabled)",
     )
     parser.add_argument(
-        "--plot-both",
-        action="store_true",
-        help="Save plots for both normal and inverted tongue signals",
+        "--no-invert-tongue",
+        dest="invert_tongue",
+        action="store_false",
+        help="Disable tongue signal polarity inversion",
     )
     return parser.parse_args()
 
@@ -324,7 +330,9 @@ def main() -> None:
     jaw_seg = jaw_signal[start_idx:end_idx]
     tongue_seg_base = tongue_signal[start_idx:end_idx]
 
-    def _run_analysis(tongue_seg: np.ndarray, label_suffix: str, plot_path: Path) -> Tuple[int, float, float]:
+    def _run_analysis(
+        tongue_seg: np.ndarray, label_suffix: str, plot_path: Path | None
+    ) -> Tuple[int, float, float]:
         max_lag_frames = max(1, int(args.max_lag * args.analysis_fps))
         lags, corrs, best_lag, best_corr = lag_sweep(jaw_seg, tongue_seg, max_lag_frames)
         zero_corr = safe_corr(jaw_seg, tongue_seg)
@@ -426,16 +434,12 @@ def main() -> None:
     print(f"Segment window: {seg_start:.3f}-{seg_end:.3f}s (pad={args.pad_seconds:.3f}s)")
 
     base_plot = Path(args.plot_path) if args.plot_path else None
-    if args.plot_both:
-        _run_analysis(tongue_seg_base, "", base_plot)
-        if base_plot is not None:
-            inv_plot = base_plot.with_name(base_plot.stem + "_inv" + base_plot.suffix)
-        else:
-            inv_plot = None
-        _run_analysis(-tongue_seg_base, "[Inverted] ", inv_plot)
-    else:
-        tongue_seg = -tongue_seg_base if args.invert_tongue else tongue_seg_base
-        _run_analysis(tongue_seg, "[Inverted] " if args.invert_tongue else "", base_plot)
+    tongue_seg = -tongue_seg_base if args.invert_tongue else tongue_seg_base
+    _, _, recommended_shift_s = _run_analysis(
+        tongue_seg,
+        "[Inverted] " if args.invert_tongue else "",
+        base_plot,
+    )
 
     if args.shift_output:
         shift_frames = int(round(recommended_shift_s * args.tongue_fps))

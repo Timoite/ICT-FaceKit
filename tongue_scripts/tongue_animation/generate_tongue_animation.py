@@ -11,13 +11,22 @@ from matplotlib.animation import FuncAnimation, FFMpegWriter
 from scipy.interpolate import make_interp_spline, interp1d
 from pathlib import Path
 
+SCRIPT_DIR = Path(__file__).parent.resolve()
+TONGUE_SCRIPTS_DIR = SCRIPT_DIR.parent
+PROJECT_ROOT = TONGUE_SCRIPTS_DIR.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 # --- IMPORT USER MODULES ---
 try:
+    from tongue_scripts.tongue_animation.face_model_io_trimesh import load_face_model_trimesh
+    from tongue_scripts.tongue_animation.render_face_animation_trimesh import (
+        map_beat_to_ict_names,
+        load_animation,
+    )
+except ImportError:
     from face_model_io_trimesh import load_face_model_trimesh
     from render_face_animation_trimesh import map_beat_to_ict_names, load_animation
-except ImportError:
-    print("CRITICAL: Required python modules not found.")
-    sys.exit(1)
 
 # ==========================================
 # CONFIGURATION
@@ -25,18 +34,14 @@ except ImportError:
 RENDER_MODE     = 'MATPLOTLIB' # Options: 'MATPLOTLIB' (Debug) or 'FULL_FACE' (Video)
 CUTOUT_MODE     = True        # Set to True to see the sagittal cut view
 
-# --- PATHS (Absolute paths for robust execution from any directory) ---
-SCRIPT_DIR = Path(__file__).parent.absolute()
-PROJECT_ROOT = SCRIPT_DIR.parent
-
 FACE_MODEL_DIR  = str(PROJECT_ROOT / "FaceXModel")
-MOTION_PATH     = str(SCRIPT_DIR / "outputs" / "1_wayne_0_75_75.npy")
-BS_JSON_PATH    = str(SCRIPT_DIR / "inputs" / "1_wayne_0_75_75.json")
-AUDIO_PATH      = str(SCRIPT_DIR / "inputs" / "1_wayne_0_75_75.wav")
-STD_PATH        = str(SCRIPT_DIR / "normalising_vectors" / "JW13_4points_std.npy")
+MOTION_PATH     = str(TONGUE_SCRIPTS_DIR / "outputs" / "1_wayne_0_75_75.npy")
+BS_JSON_PATH    = str(TONGUE_SCRIPTS_DIR / "inputs" / "1_wayne_0_75_75.json")
+AUDIO_PATH      = str(TONGUE_SCRIPTS_DIR / "inputs" / "1_wayne_0_75_75.wav")
+STD_PATH        = str(TONGUE_SCRIPTS_DIR / "normalising_vectors" / "JW13_4points_std.npy")
 
 # --- OUTPUTS ---
-OUTPUT_DIR = SCRIPT_DIR / "outputs"
+OUTPUT_DIR = TONGUE_SCRIPTS_DIR / "outputs"
 OUTPUT_DIR.mkdir(exist_ok=True)
 OUTPUT_VIDEO    = str(OUTPUT_DIR / "tongue_hybrid_deformation_cut.mp4")
 TEMP_VIDEO      = str(OUTPUT_DIR / "temp_visuals.mp4")

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.11"
 # dependencies = [
@@ -52,21 +51,21 @@ from scipy.interpolate import make_interp_spline
 # Paths & imports
 # ---------------------------------------------------------------------------
 SCRIPT_DIR = Path(__file__).parent.resolve()
-PROJECT_ROOT = SCRIPT_DIR.parent
-sys.path.insert(0, str(SCRIPT_DIR))
-
-try:
-    from face_model_io_trimesh import load_face_model_trimesh
-    from test import process_beat_data, load_ema_motion, FaceKitTongueRig, TONGUE_CONFIG
-except ImportError:
+TONGUE_SCRIPTS_DIR = SCRIPT_DIR.parent
+PROJECT_ROOT = TONGUE_SCRIPTS_DIR.parent
+TONGUE_ANIMATION_DIR = TONGUE_SCRIPTS_DIR / "tongue_animation"
+if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-    from tongue_scripts.face_model_io_trimesh import load_face_model_trimesh
-    from tongue_scripts.test import (
-        process_beat_data,
-        load_ema_motion,
-        FaceKitTongueRig,
-        TONGUE_CONFIG,
-    )
+if str(TONGUE_ANIMATION_DIR) not in sys.path:
+    sys.path.insert(0, str(TONGUE_ANIMATION_DIR))
+
+from face_model_io_trimesh import load_face_model_trimesh
+from generate_tongue_animation import (
+    process_beat_data,
+    load_ema_motion,
+    FaceKitTongueRig,
+    TONGUE_CONFIG,
+)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -953,12 +952,13 @@ def main():
             / "1"
         ),
     )
-    parser.add_argument("--tongue-npy-dir", default=str(SCRIPT_DIR / "outputs"))
+    parser.add_argument("--tongue-npy-dir", default=str(TONGUE_SCRIPTS_DIR / "outputs"))
     parser.add_argument(
-        "--std-path", default=str(SCRIPT_DIR / "normalising_vectors" / "JW13_4points_std.npy")
+        "--std-path",
+        default=str(TONGUE_SCRIPTS_DIR / "normalising_vectors" / "JW13_4points_std.npy"),
     )
     parser.add_argument("--face-model-dir", default=str(PROJECT_ROOT / "FaceXModel"))
-    parser.add_argument("--output-dir", default=str(SCRIPT_DIR / "jaw_tongue_sync"))
+    parser.add_argument("--output-dir", default=str(TONGUE_SCRIPTS_DIR / "jaw_tongue_sync"))
     args = parser.parse_args()
 
     editor = TongueGTEditor(

@@ -59,17 +59,25 @@ ICT-FaceKit/
 │   ├── *.obj                        # 53 expression blendshapes
 │   └── vertex_indices.json          # Expression names & vertex mappings
 ├── tongue_scripts/       # Tongue animation & rendering pipeline
-│   ├── face_model_io_trimesh.py     # Face model loader (critical: strict vertex order)
-│   ├── render_face_animation_trimesh.py  # Rendering utilities
-│   ├── test.py                      # Main tongue rig implementation
-│   ├── wavlm_lora.py               # WavLM speech inversion model
-│   └── test_tongue_grid_search_25fps.py  # Parameter optimization
+│   ├── tongue_animation.py          # Main rendering entry script
+│   ├── wavlm_lora.py                # WavLM speech inversion model
+│   ├── test_tongue_grid_search_25fps.py  # Parameter optimization
+│   ├── phoneme_lag_probe.py         # Per-phoneme lag analysis
+│   ├── same_phoneme_comparison.py   # Cross-render comparison utility
+│   ├── invert.py                    # Audio inversion utility
+│   ├── ground_truth_tools/
+│   │   ├── tongue_gt_editor.py      # Ground-truth editor
+│   │   └── tongue_gt_compare.py     # EMA vs GT comparison
+│   └── tongue_animation/
+│       ├── face_model_io_trimesh.py        # Face model loader (strict vertex order)
+│       ├── render_face_animation_trimesh.py # Rendering utilities
+│       └── generate_tongue_animation.py     # FaceKitTongueRig + EMA loading
 ├── ADFA_EVALUATION/      # VSR evaluation framework
 │   ├── Visual_Speech_Recognition_for_Multiple_Languages/  # AutoAVSR model
 │   ├── compute_wer.py    # WER computation
 │   ├── english.py        # Text normalization
 │   └── visualize_wer.py  # Result visualization
-└── AGENTS.md             # Active task tracking (tongue articulation optimization)
+└── crucial_progress_report/  # Session notes and experiment progress logs
 ```
 
 ### Data Flow
@@ -88,7 +96,7 @@ MP4 → AutoAVSR (VSR) → Transcript → WER computation → Quality metric
 - Always render at 25fps with `speed_rate=1.0` for VSR evaluation.
 
 ### Blendshape Name Mapping
-BEAT blendshape names differ from ICT. Use `map_beat_to_ict_names()` from `render_face_animation_trimesh.py`:
+BEAT blendshape names differ from ICT. Use `map_beat_to_ict_names()` from `tongue_scripts/tongue_animation/render_face_animation_trimesh.py`:
 - `jawOpen` stays `jawOpen`
 - `jawLeft`, `jawRight`, `mouthLeft`, `mouthRight` map directly
 - Suffix `Left/Right` becomes `_L/_R` (e.g., `browInnerUpLeft` → `browInnerUp_L`)
@@ -100,24 +108,24 @@ BEAT blendshape names differ from ICT. Use `map_beat_to_ict_names()` from `rende
 - **Rig parameters**: `rotation_deg`, `thickness`, `std_scalar` (optimized via grid search)
 
 ### Face Model Vertex Order
-OBJ files must be loaded with strict parsing to preserve exact vertex order. Use `_load_obj_strict()` from `face_model_io_trimesh.py`. Vertex order mismatch breaks blendshape animation.
+OBJ files must be loaded with strict parsing to preserve exact vertex order. Use `_load_obj_strict()` from `tongue_scripts/tongue_animation/face_model_io_trimesh.py`. Vertex order mismatch breaks blendshape animation.
 
 ## Key Files for Common Tasks
 
 ### Rendering Animation
-- `tongue_scripts/test.py` - Main tongue rig with `FaceKitTongueRig` class
-- `tongue_scripts/batch_render_corrected.py` - Batch rendering pipeline
-- `tongue_scripts/face_model_io_trimesh.py` - `TrimeshFaceModel` class
+- `tongue_scripts/tongue_animation.py` - Main tongue rendering pipeline
+- `tongue_scripts/tongue_animation/generate_tongue_animation.py` - `FaceKitTongueRig` and EMA loading
+- `tongue_scripts/tongue_animation/face_model_io_trimesh.py` - `TrimeshFaceModel` class
 
 ### VSR Evaluation
 - `ADFA_EVALUATION/Visual_Speech_Recognition_for_Multiple_Languages/infer.py` - VSR inference
-- `ADFA_EVALUATION/compute_wer.py` - WER calculatioyk go〔表情：����〕yk g〔表情：����〕y〔表情：��〕  n
+- `ADFA_EVALUATION/compute_wer.py` - WER calculation
 - `ADFA_EVALUATION/english.py` - Text normalization for WER
 
 ### Tongue Optimization
 - `tongue_scripts/test_tongue_grid_search_25fps.py` - Parameter grid search
-- `tongue_scripts/jaw_tongue_sync_analysis.py` - Temporal alignment analysis
-- `tongue_scripts/tongue_gt_editor.py` - Ground truth editor for tongue positions
+- `tongue_scripts/jaw_tongue_sync_script/jaw_tongue_sync_analysis.py` - Temporal alignment analysis
+- `tongue_scripts/ground_truth_tools/tongue_gt_editor.py` - Ground truth editor for tongue positions
 
 ## Model Dependencies
 
@@ -128,12 +136,12 @@ OBJ files must be loaded with strict parsing to preserve exact vertex order. Use
 
 Download VSR models from the [Model Zoo](https://github.com/mpc001/Visual_Speech_Recognition_for_Multiple_Languages#model-zoo).
 
-## Current Focus (see AGENTS.md)
+## Current Focus
 
 The project is currently optimizing tongue articulation to improve VSR WER. Key findings:
 - Global jaw-tongue correlation is near-zero (expected due to different articulatory roles)
 - Phoneme-level analysis is required for alignment optimization
-- Ground truth editor (`tongue_gt_editor.py`) enables MRI-grounded tongue position definition
+- Ground truth editor (`ground_truth_tools/tongue_gt_editor.py`) enables MRI-grounded tongue position definition
 
 ## Troubleshooting
 
