@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "mcp__acp__Write"
+      "mcp__acp__Write",
+      "Bash(tree:*)",
+      "Bash(python3:*)",
+      "Bash(ls:*)"
     ]
-  }
+  },
+  "outputStyle": "Explanatory"
 }
