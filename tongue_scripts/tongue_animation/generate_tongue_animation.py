@@ -6,6 +6,7 @@ import cv2
 import subprocess
 import os
 import sys
+import re
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation, FFMpegWriter
 from scipy.interpolate import make_interp_spline, interp1d
@@ -38,6 +39,7 @@ FACE_MODEL_DIR  = str(PROJECT_ROOT / "FaceXModel")
 MOTION_PATH     = str(TONGUE_SCRIPTS_DIR / "outputs" / "1_wayne_0_75_75.npy")
 BS_JSON_PATH    = str(TONGUE_SCRIPTS_DIR / "inputs" / "1_wayne_0_75_75.json")
 AUDIO_PATH      = str(TONGUE_SCRIPTS_DIR / "inputs" / "1_wayne_0_75_75.wav")
+TEXTGRID_PATH   = str(TONGUE_SCRIPTS_DIR / "inputs" / "1_wayne_0_75_75.TextGrid")
 STD_PATH        = str(TONGUE_SCRIPTS_DIR / "normalising_vectors" / "JW13_4points_std.npy")
 
 # --- OUTPUTS ---
@@ -57,10 +59,30 @@ TONGUE_CONFIG   = {
     "std_scalar":   0.20 # Scalar from your working file (was 0.15 in uploaded, 0.25 in current)
 }
 
+TH_CORRECTION_CONFIG = {
+    "enabled": True,
+    "phone_tier": "phones",
+    "labels": ["TH", "DH"],
+    "ramp_seconds": 0.03,
+    "tip_strength": 0.95,
+    "blade_strength": 0.55,
+    "target_offset_y": 0.00,
+    "target_offset_z": -0.08,
+    "max_move": 1.10,
+    "temporal_smoothing": 0.30,
+}
+
 # --- INDICES ---
 TONGUE_SLICE    = slice(16611, 17039)
 ANCHOR_INDICES  = [16661,16696,16755,16758] 
 BONE_INDICES    = [16661, 16757]               
+
+# Tongue EMA anchor order: [T4(back), T3(dorsum), T2(blade), T1(tip)]
+TONGUE_BLADE_ANCHOR_IDX = 2
+TONGUE_TIP_ANCHOR_IDX = 3
+
+GUM_START_IDX = 14062
+GUM_END_IDX = 17039
 
 # ==========================================
 # PART 1: DATA LOADING
@@ -112,6 +134,133 @@ def load_ema_motion(motion_path, std_path, rig_anchors, scalar):
         denorm_ema_3d[i, :, 2] = rig_anchors[:, 2] + delta_2d[:, 0]
         
     return denorm_ema_3d
+
+
+def normalize_phone(label):
+    return re.sub(r"[0-9]", "", label.upper())
+
+
+def parse_textgrid_intervals(textgrid_path, tier_name="phones"):
+    intervals = []
+    if not os.path.exists(textgrid_path):
+        return intervals
+
+    in_tier = False
+    current = {}
+    with open(textgrid_path, "r", encoding="utf-8") as handle:
+        for raw in handle:
+            line = raw.strip()
+            if line.startswith("item ["):
+                in_tier = False
+                continue
+            if line.startswith('name = "'):
+                tier = line.split("=", 1)[1].strip().strip('"')
+                in_tier = tier == tier_name
+                continue
+            if not in_tier:
+                continue
+            if line.startswith("intervals ["):
+                current = {}
+                continue
+            if line.startswith("xmin ="):
+                current["start"] = line.split("=", 1)[1].strip()
+            elif line.startswith("xmax ="):
+                current["end"] = line.split("=", 1)[1].strip()
+            elif line.startswith("text ="):
+                txt = line.split("=", 1)[1].strip().strip('"')
+                current["text"] = txt
+                if {"start", "end", "text"} <= current.keys():
+                    try:
+                        s = float(current["start"])
+                        e = float(current["end"])
+                    except ValueError:
+                        s, e = 0.0, 0.0
+                    intervals.append((s, e, current["text"]))
+    return intervals
+
+
+def _raised_cosine_window(t, start, end, ramp):
+    if t < start - ramp or t > end + ramp:
+        return 0.0
+    if start <= t <= end:
+        return 1.0
+    if t < start:
+        x = (t - (start - ramp)) / max(ramp, 1e-6)
+        return 0.5 - 0.5 * np.cos(np.pi * x)
+    x = (t - end) / max(ramp, 1e-6)
+    return 0.5 + 0.5 * np.cos(np.pi * x)
+
+
+def build_th_contact_weights(textgrid_path, n_frames, fps, cfg):
+    w = np.zeros(n_frames, dtype=np.float32)
+    if not cfg.get("enabled", False):
+        return w
+
+    intervals = parse_textgrid_intervals(textgrid_path, cfg.get("phone_tier", "phones"))
+    if not intervals:
+        return w
+
+    labels = {normalize_phone(x) for x in cfg.get("labels", ["TH", "DH"])}
+    ramp = float(cfg.get("ramp_seconds", 0.03))
+
+    for i in range(n_frames):
+        t = i / float(fps)
+        wt = 0.0
+        for s, e, txt in intervals:
+            if normalize_phone(txt) in labels:
+                wt = max(wt, _raised_cosine_window(t, s, e, ramp))
+        w[i] = wt
+    return w
+
+
+def estimate_dental_edge_target(face_model):
+    neutral = face_model.neutral_verts
+    gum_end = min(GUM_END_IDX, len(neutral))
+    gum_start = min(GUM_START_IDX, gum_end)
+    gum_idx = slice(gum_start, gum_end)
+    gum_verts = neutral[gum_idx]
+    if len(gum_verts) == 0:
+        return np.mean(neutral, axis=0)
+
+    z_hi = np.percentile(gum_verts[:, 2], 92)
+    y_hi = np.percentile(gum_verts[:, 1], 65)
+    candidates = gum_verts[(gum_verts[:, 2] >= z_hi) & (gum_verts[:, 1] >= y_hi)]
+    if len(candidates) < 5:
+        candidates = gum_verts[gum_verts[:, 2] >= z_hi]
+    if len(candidates) == 0:
+        candidates = gum_verts
+    return np.mean(candidates, axis=0)
+
+
+def apply_th_contact_correction(anchors_ema, th_weight, target_xyz, cfg, prev_corrected=None):
+    if th_weight <= 1e-6:
+        return anchors_ema.copy()
+
+    corrected = anchors_ema.copy()
+    max_move = float(cfg.get("max_move", 1.10))
+    ty = float(target_xyz[1] + cfg.get("target_offset_y", 0.0))
+    tz = float(target_xyz[2] + cfg.get("target_offset_z", 0.0))
+
+    def _blend_anchor(a_idx, strength):
+        alpha = float(np.clip(strength * th_weight, 0.0, 1.0))
+        if alpha <= 1e-6:
+            return
+        src = corrected[a_idx].copy()
+        tgt = np.array([src[0], ty, tz], dtype=np.float32)
+        moved = (1.0 - alpha) * src + alpha * tgt
+        delta = moved - src
+        dist = float(np.linalg.norm(delta))
+        if dist > max_move:
+            moved = src + delta * (max_move / max(dist, 1e-6))
+        corrected[a_idx] = moved
+
+    _blend_anchor(TONGUE_TIP_ANCHOR_IDX, cfg.get("tip_strength", 0.95))
+    _blend_anchor(TONGUE_BLADE_ANCHOR_IDX, cfg.get("blade_strength", 0.55))
+
+    if prev_corrected is not None:
+        beta = float(np.clip(cfg.get("temporal_smoothing", 0.30), 0.0, 1.0))
+        corrected = beta * prev_corrected + (1.0 - beta) * corrected
+    return corrected
 
 # ==========================================
 # PART 2: HYBRID TONGUE RIG
@@ -356,6 +505,14 @@ def run_pyrender_video(face_model, tongue_rig, ema_seq, face_seq):
     scene_base.add(fill_light, pose=cam_pose)
 
     frames = min(len(ema_seq), len(face_seq)) if MAX_SECONDS is None else min(len(ema_seq), len(face_seq), int(MAX_SECONDS * FPS))
+
+    th_weights = build_th_contact_weights(TEXTGRID_PATH, frames, FPS, TH_CORRECTION_CONFIG)
+    dental_target = estimate_dental_edge_target(face_model)
+    if TH_CORRECTION_CONFIG.get("enabled", False):
+        if np.max(th_weights) > 0:
+            print("TH correction enabled: TextGrid windows detected.")
+        else:
+            print("TH correction enabled, but no TH/DH windows found (or TextGrid missing).")
     
     # --- 4. PRE-CALCULATE MASKS ---
     
@@ -371,6 +528,7 @@ def run_pyrender_video(face_model, tongue_rig, ema_seq, face_seq):
     # Here we prioritize Tongue over Gums if they overlap
     is_gum_vert[is_tongue_vert] = False
 
+    prev_corrected_anchors = None
     for i in range(frames):
         if i % 25 == 0: print(f"Rendering frame {i}/{frames}...")
         
@@ -378,7 +536,18 @@ def run_pyrender_video(face_model, tongue_rig, ema_seq, face_seq):
         weights = {name: val for name, val in zip(face_model.expression_names, face_seq[i])}
         verts = face_model.deform(weights).copy()
         
-        t_verts, _, _ = tongue_rig.deform(ema_seq[i])
+        cur_anchors = ema_seq[i]
+        if TH_CORRECTION_CONFIG.get("enabled", False):
+            cur_anchors = apply_th_contact_correction(
+                cur_anchors,
+                th_weights[i],
+                dental_target,
+                TH_CORRECTION_CONFIG,
+                prev_corrected=prev_corrected_anchors,
+            )
+        prev_corrected_anchors = cur_anchors
+
+        t_verts, _, _ = tongue_rig.deform(cur_anchors)
         verts[tongue_rig.global_indices] = t_verts
         
         # Handle Cutout
