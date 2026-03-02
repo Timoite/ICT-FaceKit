@@ -95,10 +95,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tongue-fps", type=float, default=50.0, help="Native FPS of .npy sequence (for resampling)")
     parser.add_argument("--beat-fps", type=float, default=60.0, help="Native FPS of BEAT JSON (for resampling)")
     parser.add_argument(
+        "--articulatory-scalar",
+        type=float,
+        default=0.20,
+        help="Scale factor for articulatory displacement magnitude (match generate_tongue_animation.py std_scalar)",
+    )
+    parser.add_argument(
         "--smooth-frames",
         type=int,
         default=5,
         help="Moving-average window (frames), applied to both aperture curves",
+    )
+    parser.add_argument(
+        "--scale-edge-trim-seconds",
+        type=float,
+        default=0.05,
+        help="Trim this many seconds from both start and end before computing min-max scale",
     )
     parser.add_argument(
         "--window-start",
@@ -383,7 +395,13 @@ def main() -> None:
             f"Expected mu/std to have at least {NORM_VECTOR_COLS} values, got mu={mu.size}, std={std.size}"
         )
 
-    denorm_motion = raw_motion[:, :NORM_VECTOR_COLS].astype(np.float32) * std[:NORM_VECTOR_COLS] + mu[:NORM_VECTOR_COLS]
+    # Match tongue rendering scale by scaling normalized displacement before adding mean.
+    denorm_motion = (
+        raw_motion[:, :NORM_VECTOR_COLS].astype(np.float32)
+        * std[:NORM_VECTOR_COLS]
+        * float(args.articulatory_scalar)
+        + mu[:NORM_VECTOR_COLS]
+    )
 
     min_required_cols = TONGUE_COORD_COLS + LIP_COORD_COLS
     if denorm_motion.shape[1] < min_required_cols:
@@ -409,8 +427,45 @@ def main() -> None:
     lip_aperture_art = moving_average(lip_aperture_art, args.smooth_frames)
     lip_aperture_bs = moving_average(lip_aperture_bs, args.smooth_frames)
 
-    # Compare in Euclidean space, then apply shared min-max scaling to both curves.
-    lip_aperture_art, lip_aperture_bs = minmax_scale_pair(lip_aperture_art, lip_aperture_bs)
+    # Keep raw Euclidean ranges for display, then min-max scale for comparison plotting.
+    # To avoid edge artifacts (e.g., near-zero starts), estimate min/max on trimmed edges.
+    trim_frames = max(0, int(round(float(args.scale_edge_trim_seconds) * float(args.target_fps))))
+
+    if trim_frames > 0 and len(lip_aperture_art) > 2 * trim_frames:
+        art_ref = lip_aperture_art[trim_frames:-trim_frames]
+    else:
+        art_ref = lip_aperture_art
+    if trim_frames > 0 and len(lip_aperture_bs) > 2 * trim_frames:
+        bs_ref = lip_aperture_bs[trim_frames:-trim_frames]
+    else:
+        bs_ref = lip_aperture_bs
+
+    art_min = float(np.min(art_ref)) if len(art_ref) else 0.0
+    art_max = float(np.max(art_ref)) if len(art_ref) else 0.0
+    bs_min = float(np.min(bs_ref)) if len(bs_ref) else 0.0
+    bs_max = float(np.max(bs_ref)) if len(bs_ref) else 0.0
+    art_range = art_max - art_min
+    bs_range = bs_max - bs_min
+
+    # Scale each curve independently to [0,1] using trimmed-range statistics.
+    if art_range > 1e-8:
+        lip_aperture_art = ((lip_aperture_art - art_min) / art_range).astype(np.float32)
+    else:
+        lip_aperture_art = np.zeros_like(lip_aperture_art, dtype=np.float32)
+    if bs_range > 1e-8:
+        lip_aperture_bs = ((lip_aperture_bs - bs_min) / bs_range).astype(np.float32)
+    else:
+        lip_aperture_bs = np.zeros_like(lip_aperture_bs, dtype=np.float32)
+
+    lip_aperture_art = np.clip(lip_aperture_art, 0.0, 1.0)
+    lip_aperture_bs = np.clip(lip_aperture_bs, 0.0, 1.0)
+
+    scaling_info_text = (
+        "Min-max scaling used:\n"
+        f"Trim edges: {float(args.scale_edge_trim_seconds):.3f}s ({trim_frames} frames)\n"
+        f"Art: (x - {art_min:.3f}) / {art_range:.3f}\n"
+        f"BS:  (x - {bs_min:.3f}) / {bs_range:.3f}"
+    )
 
     # Both are now at target_fps
     t_art = np.arange(len(lip_aperture_art), dtype=np.float32) / float(args.target_fps)
@@ -457,6 +512,16 @@ def main() -> None:
         ax_lip.set_xlabel("Time (s)")
         ax_lip.set_title("Lip aperture comparison")
         ax_lip.set_xlim(window_start, window_end)
+        ax_lip.text(
+            0.015,
+            0.98,
+            scaling_info_text,
+            transform=ax_lip.transAxes,
+            va="top",
+            ha="left",
+            fontsize=9,
+            bbox=dict(boxstyle="round", facecolor="white", alpha=0.75),
+        )
         ax_lip.legend(loc="upper right")
         ax_lip.grid(alpha=0.2, linestyle=":")
     else:
@@ -488,6 +553,16 @@ def main() -> None:
         ax_lip.set_ylabel("Aperture (min-max scaled)")
         ax_lip.set_xlabel("Time (s)")
         ax_lip.set_title("Lip aperture comparison")
+        ax_lip.text(
+            0.015,
+            0.98,
+            scaling_info_text,
+            transform=ax_lip.transAxes,
+            va="top",
+            ha="left",
+            fontsize=9,
+            bbox=dict(boxstyle="round", facecolor="white", alpha=0.75),
+        )
         ax_lip.legend(loc="upper right")
 
         visible_intervals = [
