@@ -15,28 +15,29 @@ ensure_nltk_resource("corpora/cmudict", "cmudict")
 g2p = g2p_en.G2p()
 
 # 2. Define a Phoneme -> Viseme Map
-# This uses a standard "Visual Grouping" (similar to Oculus/MPEG-4)
-# We group sounds that LOOK the same into the same "Viseme ID"
+# Visual grouping table agreed for this project:
+# - Bilabial Plosive: P, M, B
+# - Labiodentals: F, V
+# - Dental Fricative: TH, DH
+# - Alveolar Plosive: T, D, N
+# - Alveolar Fricatives: S, Z
+# - Post-Alveolar Fricative: SH, ZH
+# - Velar Plosive: K, G
 VISUAL_MAP = {
-    # Bilabials
-    'P': 'V_BILABIAL', 'B': 'V_BILABIAL', 'M': 'V_BILABIAL',
+    # Bilabial Plosive
+    'P': 'V_BILABIAL_PLOSIVE', 'M': 'V_BILABIAL_PLOSIVE', 'B': 'V_BILABIAL_PLOSIVE',
     # Labiodentals
     'F': 'V_LABIODENTAL', 'V': 'V_LABIODENTAL',
-    # Dental/Alveolar
-    'T': 'V_DENTAL', 'D': 'V_DENTAL', 'N': 'V_DENTAL', 'L': 'V_DENTAL',
-    'S': 'V_DENTAL', 'Z': 'V_DENTAL', 'TH': 'V_DENTAL', 'DH': 'V_DENTAL',
-    # Palatals (The "Square" Look)
-    'SH': 'V_PALATAL', 'CH': 'V_PALATAL', 'JH': 'V_PALATAL', 'ZH': 'V_PALATAL', 'Y': 'V_PALATAL',
-    # Velars/Glottal (The "Neutral" Look)
-    'K': 'V_NEUTRAL', 'G': 'V_NEUTRAL', 'NG': 'V_NEUTRAL', 'HH': 'V_NEUTRAL',
-    # Rounding
-    'W': 'V_ROUND', 'R': 'V_ROUND', 'UW': 'V_ROUND', 'OW': 'V_ROUND', 'UH': 'V_ROUND', 'OY': 'V_ROUND',
-    # Wide
-    'IY': 'V_WIDE', 'IH': 'V_WIDE', 'AE': 'V_WIDE', 'EH': 'V_WIDE', 'AY': 'V_WIDE',
-    # Open
-    'AA': 'V_OPEN', 'AO': 'V_OPEN', 'AH': 'V_OPEN', 'AW': 'V_OPEN', 'ER': 'V_OPEN',
-    # Silence
-    ' ': 'V_SIL', 'SIL': 'V_SIL'
+    # Dental Fricative
+    'TH': 'V_DENTAL_FRICATIVE', 'DH': 'V_DENTAL_FRICATIVE',
+    # Alveolar Plosive
+    'T': 'V_ALVEOLAR_PLOSIVE', 'D': 'V_ALVEOLAR_PLOSIVE', 'N': 'V_ALVEOLAR_PLOSIVE',
+    # Alveolar Fricatives
+    'S': 'V_ALVEOLAR_FRICATIVE', 'Z': 'V_ALVEOLAR_FRICATIVE',
+    # Post-Alveolar Fricative
+    'SH': 'V_POST_ALVEOLAR_FRICATIVE', 'ZH': 'V_POST_ALVEOLAR_FRICATIVE',
+    # Velar Plosive
+    'K': 'V_VELAR_PLOSIVE', 'G': 'V_VELAR_PLOSIVE',
 }
 
 def text_to_viseme_stream(text):

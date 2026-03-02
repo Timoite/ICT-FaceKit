@@ -4,7 +4,8 @@
       "mcp__acp__Write",
       "Bash(tree:*)",
       "Bash(python3:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(.venv/bin/python tongue_scripts/lip_aperture_textgrid_plot.py --beat-root /home/iite/ICT-FaceKit/data/beat_cache/beat_english_v0.2.1/beat_english_v0.2.1/1 --window-start 20 --window-end 23)"
     ]
   },
   "outputStyle": "Explanatory"

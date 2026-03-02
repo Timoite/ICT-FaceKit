@@ -22,9 +22,11 @@ from typing import List
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.io import wavfile
+from scipy.stats import pearsonr
 
 TONGUE_COORD_COLS = 8  # 4 tongue points x (z, y)
 LIP_COORD_COLS = 4     # upper-lip (2) + lower-lip (2)
+NORM_VECTOR_COLS = 14  # expected width for mu/std normalization vectors
 
 # From README Multi-PIE 68 landmarks mapping:
 # landmark 62 (upper inner lip mid) -> vertex 5533
@@ -78,6 +80,16 @@ def parse_args() -> argparse.Namespace:
         default=str(PROJECT_ROOT / "FaceXModel"),
         help="Face model directory",
     )
+    parser.add_argument(
+        "--mu-path",
+        default=str(SCRIPT_DIR / "normalising_vectors" / "JW13_4points_mu.npy"),
+        help="Path to normalization mean (.npy), used to denormalize articulatory coordinates",
+    )
+    parser.add_argument(
+        "--std-path",
+        default=str(SCRIPT_DIR / "normalising_vectors" / "JW13_4points_std.npy"),
+        help="Path to normalization std (.npy), used to denormalize articulatory coordinates",
+    )
     parser.add_argument("--phone-tier", default="phones", help="TextGrid tier to read")
     parser.add_argument("--target-fps", type=float, default=50.0, help="Target FPS for all time series (resamples if needed)")
     parser.add_argument("--tongue-fps", type=float, default=50.0, help="Native FPS of .npy sequence (for resampling)")
@@ -109,6 +121,12 @@ def parse_args() -> argparse.Namespace:
         "--aperture-only",
         action="store_true",
         help="Plot only the two aperture curves (no waveform, no TextGrid labels, no interval separators)",
+    )
+    parser.add_argument(
+        "--max-lag-seconds",
+        type=float,
+        default=0.5,
+        help="Maximum lag to test in seconds (for correlation analysis)",
     )
     return parser.parse_args()
 
@@ -176,14 +194,72 @@ def moving_average(values: np.ndarray, window: int) -> np.ndarray:
     return np.convolve(values, kernel, mode="same")
 
 
-def zscore(values: np.ndarray) -> np.ndarray:
+def _minmax_scale(values: np.ndarray) -> np.ndarray:
     if len(values) == 0:
         return values
-    mean = float(np.mean(values))
-    std = float(np.std(values))
-    if std < 1e-8:
+    v_min = float(np.min(values))
+    v_max = float(np.max(values))
+    if v_max - v_min < 1e-8:
         return np.zeros_like(values, dtype=np.float32)
-    return ((values - mean) / std).astype(np.float32)
+    return ((values - v_min) / (v_max - v_min)).astype(np.float32)
+
+
+def minmax_scale_pair(a: np.ndarray, b: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    # Scale each curve to [0, 1] independently so their dynamic shapes can be compared directly.
+    return _minmax_scale(a), _minmax_scale(b)
+
+
+def compute_lag_correlation(series1: np.ndarray, series2: np.ndarray, max_lag_frames: int):
+    """
+    Compute correlation between series1 and series2 at different lags.
+
+    Args:
+        series1: Reference series (will be shifted)
+        series2: Target series (stationary)
+        max_lag_frames: Maximum lag to test in both directions
+
+    Returns:
+        correlations: Array of correlations for lags [-max_lag_frames, ..., max_lag_frames]
+        best_lag: Lag (in frames) that maximizes correlation (positive = series1 leads)
+        best_correlation: Correlation value at best_lag
+    """
+    n_points = min(len(series1), len(series2))
+    s1 = series1[:n_points]
+    s2 = series2[:n_points]
+
+    lags = np.arange(-max_lag_frames, max_lag_frames + 1)
+    correlations = np.full(len(lags), np.nan, dtype=np.float64)
+
+    for i, lag in enumerate(lags):
+        if lag < 0:
+            # series1 lags behind (shift series1 forward)
+            start = -lag
+            if start < n_points:
+                corr, _ = pearsonr(s1[start:], s2[:n_points - start])
+                correlations[i] = float(corr)
+        elif lag > 0:
+            # series1 leads (shift series1 backward)
+            end = n_points - lag
+            if end > 0:
+                corr, _ = pearsonr(s1[:end], s2[lag:])
+                correlations[i] = float(corr)
+        else:
+            # No lag
+            corr, _ = pearsonr(s1, s2)
+            correlations[i] = float(corr)
+
+    # Find best lag (ignore NaN values)
+    valid_mask = ~np.isnan(correlations)
+    if not np.any(valid_mask):
+        return correlations, 0, 0.0
+
+    best_idx = int(np.argmax(correlations[valid_mask]))
+    valid_indices = np.where(valid_mask)[0]
+    best_idx = int(valid_indices[best_idx])
+    best_lag = int(lags[best_idx])
+    best_correlation = float(correlations[best_idx])
+
+    return correlations, best_lag, best_correlation
 
 
 def resample_matrix(values: np.ndarray, source_fps: float, target_fps: float) -> np.ndarray:
@@ -240,9 +316,6 @@ def load_blendshape_lip_aperture(json_path: Path, face_model_dir: Path, beat_fps
         lower = verts[LOWER_LIP_VERTEX_IDX]
         lip_aperture[frame_idx] = float(np.linalg.norm(upper - lower))
 
-    # Normalize closure baseline to zero (closed mouth => 0)
-    lip_aperture = np.maximum(0.0, lip_aperture - float(np.min(lip_aperture)))
-
     # Resample BEAT from native beat_fps to target_fps
     lip_aperture = lip_aperture.reshape(-1, 1)
     lip_aperture = resample_matrix(lip_aperture, source_fps=beat_fps, target_fps=target_fps)
@@ -259,6 +332,8 @@ def main() -> None:
     beat_root = Path(args.beat_root)
     npy_dir = Path(args.tongue_npy_dir)
     face_model_dir = Path(args.face_model_dir)
+    mu_path = Path(args.mu_path)
+    std_path = Path(args.std_path)
 
     dataset_id = args.dataset_id
     wav_path = beat_root / f"{dataset_id}.wav"
@@ -269,6 +344,9 @@ def main() -> None:
     for p in (wav_path, textgrid_path, json_path, npy_path):
         if not p.exists():
             raise FileNotFoundError(f"Missing input file: {p}")
+    for p in (mu_path, std_path):
+        if not p.exists():
+            raise FileNotFoundError(f"Missing normalization file: {p}")
 
     if args.output_path:
         output_path = Path(args.output_path)
@@ -293,14 +371,28 @@ def main() -> None:
             f"Expected .npy shape (T, D), got {raw_motion.shape}"
         )
 
+    if raw_motion.shape[1] < NORM_VECTOR_COLS:
+        raise ValueError(
+            f"Expected at least {NORM_VECTOR_COLS} columns for denormalization, got {raw_motion.shape[1]}"
+        )
+
+    mu = np.load(mu_path).astype(np.float32).reshape(-1)
+    std = np.load(std_path).astype(np.float32).reshape(-1)
+    if mu.size < NORM_VECTOR_COLS or std.size < NORM_VECTOR_COLS:
+        raise ValueError(
+            f"Expected mu/std to have at least {NORM_VECTOR_COLS} values, got mu={mu.size}, std={std.size}"
+        )
+
+    denorm_motion = raw_motion[:, :NORM_VECTOR_COLS].astype(np.float32) * std[:NORM_VECTOR_COLS] + mu[:NORM_VECTOR_COLS]
+
     min_required_cols = TONGUE_COORD_COLS + LIP_COORD_COLS
-    if raw_motion.shape[1] < min_required_cols:
+    if denorm_motion.shape[1] < min_required_cols:
         raise ValueError(
             f"Expected at least {min_required_cols} columns (8 tongue + 4 lips), got {raw_motion.shape[1]}"
         )
 
-    # Exclude tongue columns [0:8], then use the next 4 columns [8:12] for lips.
-    lip_motion = raw_motion[:, TONGUE_COORD_COLS:TONGUE_COORD_COLS + LIP_COORD_COLS].astype(np.float32)
+    # Exclude tongue columns [0:8], then use denormalized lip columns [8:12].
+    lip_motion = denorm_motion[:, TONGUE_COORD_COLS:TONGUE_COORD_COLS + LIP_COORD_COLS]
     upper_point = lip_motion[:, 0:2]
     lower_point = lip_motion[:, 2:4]
     lip_aperture_art = np.linalg.norm(upper_point - lower_point, axis=1)
@@ -317,9 +409,8 @@ def main() -> None:
     lip_aperture_art = moving_average(lip_aperture_art, args.smooth_frames)
     lip_aperture_bs = moving_average(lip_aperture_bs, args.smooth_frames)
 
-    # Z-score both aperture curves
-    lip_aperture_art = zscore(lip_aperture_art)
-    lip_aperture_bs = zscore(lip_aperture_bs)
+    # Compare in Euclidean space, then apply shared min-max scaling to both curves.
+    lip_aperture_art, lip_aperture_bs = minmax_scale_pair(lip_aperture_art, lip_aperture_bs)
 
     # Both are now at target_fps
     t_art = np.arange(len(lip_aperture_art), dtype=np.float32) / float(args.target_fps)
@@ -362,30 +453,39 @@ def main() -> None:
         fig, ax_lip = plt.subplots(1, 1, figsize=(16, 4.5))
         ax_lip.plot(t_art[art_mask], lip_aperture_art[art_mask], label="Lip Aperture (Articulatory)", linewidth=1.8)
         ax_lip.plot(t_bs[bs_mask], lip_aperture_bs[bs_mask], label="Lip Aperture (Blendshapes)", linewidth=1.8)
-        ax_lip.set_ylabel("Aperture (z-score)")
+        ax_lip.set_ylabel("Aperture (min-max scaled)")
         ax_lip.set_xlabel("Time (s)")
         ax_lip.set_title("Lip aperture comparison")
         ax_lip.set_xlim(window_start, window_end)
         ax_lip.legend(loc="upper right")
         ax_lip.grid(alpha=0.2, linestyle=":")
     else:
-        fig, (ax_wave, ax_lip) = plt.subplots(
-            2,
+        # Compute lag correlation for the windowed data
+        max_lag_frames = int(args.max_lag_seconds * args.target_fps)
+        art_windowed = lip_aperture_art[art_mask]
+        bs_windowed = lip_aperture_bs[bs_mask]
+
+        correlations, best_lag, best_corr = compute_lag_correlation(art_windowed, bs_windowed, max_lag_frames)
+        lags = np.arange(-max_lag_frames, max_lag_frames + 1)
+        lags_seconds = lags / args.target_fps
+
+        fig, (ax_wave, ax_lip, ax_corr) = plt.subplots(
+            3,
             1,
-            figsize=(16, 8),
-            sharex=True,
-            gridspec_kw={"height_ratios": [1.0, 1.0], "hspace": 0.2},
+            figsize=(16, 10),
+            sharex=False,
+            gridspec_kw={"height_ratios": [1.0, 1.0, 0.8], "hspace": 0.25},
         )
 
         # Top: waveform
         ax_wave.plot(t_wav[wav_mask], wav_data[wav_mask], color="#1f77b4", linewidth=1.2)
         ax_wave.set_ylabel("Waveform")
-        ax_wave.set_title(f"{dataset_id}: Waveform + TextGrid intervals")
+        ax_wave.set_title(f"{dataset_id}: Waveform + TextGrid intervals", y=1.12)
 
         # Bottom: lip apertures
         ax_lip.plot(t_art[art_mask], lip_aperture_art[art_mask], label="Lip Aperture (Articulatory)", linewidth=1.8)
         ax_lip.plot(t_bs[bs_mask], lip_aperture_bs[bs_mask], label="Lip Aperture (Blendshapes)", linewidth=1.8)
-        ax_lip.set_ylabel("Aperture (z-score)")
+        ax_lip.set_ylabel("Aperture (min-max scaled)")
         ax_lip.set_xlabel("Time (s)")
         ax_lip.set_title("Lip aperture comparison")
         ax_lip.legend(loc="upper right")
@@ -417,8 +517,35 @@ def main() -> None:
             ax_lip.axvline(b, linestyle="--", linewidth=1.5, color="#1f77b4", alpha=0.9)
 
         ax_wave.set_xlim(window_start, window_end)
+        ax_lip.set_xlim(window_start, window_end)
         ax_wave.grid(alpha=0.2, linestyle=":")
         ax_lip.grid(alpha=0.2, linestyle=":")
+
+        # Bottom: lag correlation
+        valid_mask = ~np.isnan(correlations)
+        ax_corr.plot(lags_seconds[valid_mask], correlations[valid_mask], color='#d62728', linewidth=2, label='Correlation')
+        ax_corr.axvline(0, color='gray', linestyle='--', linewidth=1, alpha=0.7, label='Zero lag')
+        ax_corr.axvline(best_lag / args.target_fps, color='green', linestyle='-', linewidth=2, alpha=0.8, label=f'Best lag: {best_lag / args.target_fps:.3f}s')
+        ax_corr.axhline(best_corr, color='green', linestyle=':', linewidth=1, alpha=0.5)
+
+        # Mark the best point
+        ax_corr.plot(best_lag / args.target_fps, best_corr, 'go', markersize=10, markeredgecolor='darkgreen', markeredgewidth=2)
+        ax_corr.annotate(f'r={best_corr:.3f}', xy=(best_lag / args.target_fps, best_corr),
+                        xytext=(10, 10), textcoords='offset points', fontsize=10,
+                        bbox=dict(boxstyle='round,pad=0.5', facecolor='yellow', alpha=0.3))
+
+        ax_corr.set_ylabel("Pearson's r")
+        ax_corr.set_xlabel("Lag (seconds) - Positive = Articulatory leads")
+        ax_corr.set_title(f"Cross-correlation: Articulatory vs Blendshape aperture (Best lag: {best_lag / args.target_fps:.3f}s = {best_lag} frames)")
+        ax_corr.legend(loc='upper right')
+        ax_corr.grid(alpha=0.2, linestyle=':')
+        ax_corr.set_xlim(-args.max_lag_seconds, args.max_lag_seconds)
+
+        # Add interpretation text
+        lag_direction = "leads" if best_lag > 0 else "lags behind" if best_lag < 0 else "is aligned with"
+        interpretation = f"Articulatory aperture {lag_direction} blendshape by {abs(best_lag / args.target_fps):.3f}s"
+        ax_corr.text(0.02, 0.05, interpretation, transform=ax_corr.transAxes,
+                    fontsize=10, bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
 
     plt.tight_layout()
     plt.savefig(output_path, dpi=180)
