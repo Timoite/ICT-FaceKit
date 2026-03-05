@@ -385,8 +385,11 @@ def transcribe_video(
         segments = enforce_max_duration(segments, min(MAX_INFERENCE_SECONDS, max_segment_seconds))
     else:
         if not textgrid_path:
-            print("TextGrid not found; falling back to single-pass inference.")
-        segments = enforce_max_duration([(0.0, get_cached_duration())], MAX_INFERENCE_SECONDS)
+            print("TextGrid not found; falling back to duration-based segmentation.")
+        segments = enforce_max_duration(
+            [(0.0, get_cached_duration())],
+            min(MAX_INFERENCE_SECONDS, max_segment_seconds),
+        )
 
     use_direct = (
         len(segments) == 1

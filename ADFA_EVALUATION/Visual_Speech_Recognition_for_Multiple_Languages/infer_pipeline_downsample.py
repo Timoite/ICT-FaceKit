@@ -109,10 +109,10 @@ def build_segments(
         )
     else:
         if not textgrid_path:
-            print("TextGrid not found; falling back to single-pass inference.")
+            print("TextGrid not found; falling back to duration-based segmentation.")
         segments = enforce_max_duration(
             [(0.0, video_duration)],
-            MAX_INFERENCE_SECONDS,
+            min(MAX_INFERENCE_SECONDS, max_segment_seconds),
         )
 
     return segments, video_duration, textgrid_path
