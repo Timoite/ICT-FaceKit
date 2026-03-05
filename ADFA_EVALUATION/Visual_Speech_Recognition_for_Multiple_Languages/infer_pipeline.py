@@ -1,29 +1,50 @@
-"""Run AVSR inference on individual videos or batches with directory mirroring.
+"""Unified AVSR inference pipeline.
 
-Now supports TextGrid-driven sentence segmentation to avoid overlapping clips.
+Key behavior:
+- Always enforce 25 FPS input (default, configurable).
+- Segment long clips by TextGrid word/silence boundaries (no word is cut in half).
+- Target ~8 second segments for stable VSR inference memory/quality tradeoff.
 """
+
+from __future__ import annotations
+
 import argparse
 import os
-import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, List, Optional, Tuple, cast
+from typing import Any, Iterable, List, Optional, Sequence, Tuple, cast
 
 import torch
-from pipelines.model import AVSR
+
 from pipelines.data.data_module import AVSRDataLoader
 from pipelines.detectors.mediapipe.detector import LandmarksDetector
+from pipelines.model import AVSR
 
-# Change this to your model paths. Make sure to download the model files first.
 MODEL_CONF = "data/LRS3_V_WER19.1/model.json"
 MODEL_PATH = "data/LRS3_V_WER19.1/model.pth"
 VIDEO_PATH = "data/26_reamey_0_112_112.mp4"
-TEXTGRID_CACHE_ROOT = "data/beat_textgrids"
-TEXTGRID_REPO = "H-Liu1997/BEAT"
-TEXTGRID_DATASET_PREFIX = "beat_english_v0.2.1/beat_english_v0.2.1"
-MAX_INFERENCE_SECONDS = 60.0
+DEFAULT_OUTPUT_DIR = "transcripts"
+DEFAULT_TARGET_FPS = 25
+
+# Prefer local BEAT cache shipped at repo root, then project-local fallback.
+DEFAULT_TEXTGRID_ROOTS = [
+    Path(__file__).resolve().parents[2] / "data" / "beat_cache" / "beat_english_v0.2.1" / "beat_english_v0.2.1",
+    Path(__file__).resolve().parent / "data" / "beat_cache" / "beat_english_v0.2.1" / "beat_english_v0.2.1",
+    Path(__file__).resolve().parent / "data" / "beat_textgrids",
+]
+
+# Segment policy tuned from sample 1_wayne_0_75_75.TextGrid:
+# silence median ~0.09s, p75 ~0.32s, p90 ~0.66s.
+# General criterion used below:
+#   cut candidates = long silences (>= max(0.18, min(0.45, p75)))
+# with short-pause fallback when needed to stay close to ~8s segments.
+DEFAULT_TARGET_SEGMENT_SECONDS = 8.0
+DEFAULT_MIN_SEGMENT_SECONDS = 4.0
+DEFAULT_MAX_SEGMENT_SECONDS = 12.0
+DEFAULT_MIN_SILENCE_SECONDS = 0.0  # <= 0 means auto-derive from TextGrid silence stats
+SHORT_PAUSE_FALLBACK_SECONDS = 0.08
 
 
 @dataclass
@@ -32,71 +53,99 @@ class WordInterval:
     end: float
     text: str
 
+
+@dataclass
+class SilenceInterval:
+    start: float
+    end: float
+
+    @property
+    def duration(self) -> float:
+        return max(0.0, self.end - self.start)
+
+    @property
+    def midpoint(self) -> float:
+        return self.start + 0.5 * self.duration
+
+
 class InferencePipeline(torch.nn.Module):
-    def __init__(self, modality, model_path, model_conf, detector="mediapipe", face_track=False, device="cuda:0"):
-        super(InferencePipeline, self).__init__()
+    def __init__(
+        self,
+        modality: str,
+        model_path: str,
+        model_conf: str,
+        detector: str = "mediapipe",
+        face_track: bool = False,
+        device: str = "cuda:0",
+    ):
+        super().__init__()
         self.device = device
-        # modality configuration
         self.modality = modality
         self.dataloader = AVSRDataLoader(modality, detector=detector)
-        self.model = AVSR(modality, model_path, model_conf, rnnlm=None, rnnlm_conf=None, penalty=0.0, ctc_weight=0.1, lm_weight=0.0, beam_size=40, device=device)
+        self.model = AVSR(
+            modality,
+            model_path,
+            model_conf,
+            rnnlm=None,
+            rnnlm_conf=None,
+            penalty=0.0,
+            ctc_weight=0.1,
+            lm_weight=0.0,
+            beam_size=40,
+            device=device,
+        )
         if face_track and self.modality in ["video", "audiovisual"]:
             self.landmarks_detector = LandmarksDetector()
         else:
             self.landmarks_detector = None
 
-
-    def process_landmarks(self, data_filename, landmarks_filename):
+    def process_landmarks(self, data_filename: str, landmarks_filename: Optional[str]):
         if self.modality == "audio":
             return "data/clip.mp4"
         if self.modality in ["video", "audiovisual"]:
             if self.landmarks_detector is None:
-                raise RuntimeError("Landmarks detector requested but not initialized. Enable face tracking.")
-            landmarks = self.landmarks_detector(data_filename)
-            return landmarks
+                raise RuntimeError(
+                    "Landmarks detector requested but not initialized. Enable face tracking."
+                )
+            return self.landmarks_detector(data_filename)
+        return landmarks_filename
 
-
-    def forward(self, data_filename, landmarks_filename=None):
-        assert os.path.isfile(data_filename), f"data_filename: {data_filename} does not exist."
+    def forward(self, data_filename: str, landmarks_filename: Optional[str] = None):
+        assert os.path.isfile(data_filename), f"data_filename does not exist: {data_filename}"
         landmarks = self.process_landmarks(data_filename, landmarks_filename)
         data = self.dataloader.load_data(data_filename, landmarks)
-        transcript = self.model.infer(data)
-        return transcript
+        return self.model.infer(data)
 
-    def extract_features(self, data_filename, landmarks_filename=None, extract_resnet_feats=False):
-        assert os.path.isfile(data_filename), f"data_filename: {data_filename} does not exist."
+    def extract_features(
+        self,
+        data_filename: str,
+        landmarks_filename: Optional[str] = None,
+        extract_resnet_feats: bool = False,
+    ):
+        assert os.path.isfile(data_filename), f"data_filename does not exist: {data_filename}"
         landmarks = self.process_landmarks(data_filename, landmarks_filename)
         data = self.dataloader.load_data(data_filename, landmarks)
         if data is None:
             raise ValueError(f"Dataloader returned no data for {data_filename}")
 
         model_core = cast(Any, self.model.model)
-
         with torch.no_grad():
             if isinstance(data, tuple):
                 video_tensor, audio_tensor = data
-                enc_feats = model_core.encode(
+                return model_core.encode(
                     video_tensor.to(self.device),
                     audio_tensor.to(self.device),
                     extract_resnet_feats=extract_resnet_feats,
                 )
-            else:
-                enc_feats = model_core.encode(
-                    data.to(self.device),
-                    extract_resnet_feats=extract_resnet_feats,
-                )
-        return enc_feats
+            return model_core.encode(
+                data.to(self.device),
+                extract_resnet_feats=extract_resnet_feats,
+            )
 
-def maybe_clear_cuda_cache(device):
+
+def maybe_clear_cuda_cache(device: Optional[str]) -> None:
     if device and device.startswith("cuda") and torch.cuda.is_available():
         torch.cuda.empty_cache()
-
-
-def infer_entire_video(pipeline, video_path):
-    try:
-        return pipeline(video_path).strip()
-    finally:
-        maybe_clear_cuda_cache(pipeline.device)
 
 
 def get_video_duration(filename: str) -> float:
@@ -116,117 +165,7 @@ def get_video_duration(filename: str) -> float:
         check=True,
         text=True,
     )
-    try:
-        return float(result.stdout.strip())
-    except ValueError:
-        raise RuntimeError(f"Unable to determine duration for {filename}")
-
-def clip_video_segment(video_path: str, output_path: str, start_time: float, end_time: float) -> None:
-    duration = max(end_time - start_time, 0.1)
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-ss",
-        f"{start_time:.3f}",
-        "-i",
-        video_path,
-        "-t",
-        f"{duration:.3f}",
-        "-c:v",
-        "libx264",
-        "-c:a",
-        "aac",
-        "-loglevel",
-        "error",
-        output_path,
-    ]
-    subprocess.run(cmd, check=True)
-
-
-def extract_speaker_id(video_path: str) -> Optional[str]:
-    path = Path(video_path)
-    for part in reversed(path.parts):
-        if part.startswith("speaker_"):
-            suffix = part.split("_", 1)[1]
-            return suffix
-    stem = path.stem
-    prefix = stem.split("_", 1)[0]
-    return prefix if prefix else None
-
-
-def download_textgrids_for_speaker(speaker_id: str, cache_root: Path) -> Path:
-    dest_dir = cache_root / speaker_id
-    if dest_dir.is_dir() and any(dest_dir.glob("*.TextGrid")):
-        return dest_dir
-
-    try:
-        from huggingface_hub import snapshot_download
-    except ImportError as exc:  # pragma: no cover - optional dependency
-        raise RuntimeError(
-            "huggingface_hub is required to download TextGrid files automatically."
-        ) from exc
-
-    temp_dir = Path(tempfile.mkdtemp(prefix="beat_dl_"))
-    try:
-        pattern = f"{TEXTGRID_DATASET_PREFIX}/{speaker_id}/*.TextGrid"
-        downloaded_root = Path(
-            snapshot_download(
-                repo_id=TEXTGRID_REPO,
-                repo_type="dataset",
-                allow_patterns=pattern,
-                local_dir=str(temp_dir),
-                local_dir_use_symlinks=False,
-            )
-        )
-
-        candidates = [
-            downloaded_root / TEXTGRID_DATASET_PREFIX / speaker_id,
-            downloaded_root / "beat_english_v0.2.1" / "beat_english_v0.2.1" / speaker_id,
-            downloaded_root / speaker_id,
-        ]
-        source_dir = next((c for c in candidates if c.exists()), None)
-        if source_dir is None:
-            raise FileNotFoundError(
-                f"Unable to locate TextGrid files for speaker {speaker_id} in downloaded snapshot."
-            )
-
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        for textgrid_file in source_dir.glob("*.TextGrid"):
-            shutil.copy2(textgrid_file, dest_dir / textgrid_file.name)
-        return dest_dir
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
-
-
-def ensure_textgrid_file(
-    video_path: str,
-    speaker_id: Optional[str],
-    cache_root: Optional[str],
-    auto_download: bool,
-) -> Optional[str]:
-    if not speaker_id or not cache_root:
-        return None
-
-    cache_root_path = Path(cache_root)
-    textgrid_name = f"{Path(video_path).stem}.TextGrid"
-    candidate = cache_root_path / speaker_id / textgrid_name
-    if candidate.is_file():
-        return str(candidate)
-
-    if not auto_download:
-        return None
-
-    try:
-        download_textgrids_for_speaker(speaker_id, cache_root_path)
-    except Exception as exc:  # pragma: no cover - network dependent
-        print(f"Warning: Failed to download TextGrid for speaker {speaker_id}: {exc}")
-        return None
-
-    if candidate.is_file():
-        return str(candidate)
-
-    print(f"Warning: TextGrid {textgrid_name} not found for speaker {speaker_id}.")
-    return None
+    return float(result.stdout.strip())
 
 
 def parse_textgrid_words(textgrid_path: str, tier_name: str = "words") -> List[WordInterval]:
@@ -241,7 +180,7 @@ def parse_textgrid_words(textgrid_path: str, tier_name: str = "words") -> List[W
                 in_tier = False
                 continue
             if line.startswith('name = "'):
-                tier = line.split('=')[1].strip().strip('"')
+                tier = line.split("=", 1)[1].strip().strip('"')
                 in_tier = tier == tier_name
                 continue
             if not in_tier:
@@ -250,10 +189,10 @@ def parse_textgrid_words(textgrid_path: str, tier_name: str = "words") -> List[W
                 current = {}
                 continue
             if line.startswith("xmin ="):
-                current["start"] = float(line.split("=")[1])
+                current["start"] = float(line.split("=", 1)[1])
                 continue
             if line.startswith("xmax ="):
-                current["end"] = float(line.split("=")[1])
+                current["end"] = float(line.split("=", 1)[1])
                 continue
             if line.startswith("text ="):
                 text_value = line.split("=", 1)[1].strip()
@@ -265,294 +204,591 @@ def parse_textgrid_words(textgrid_path: str, tier_name: str = "words") -> List[W
                         WordInterval(
                             start=float(current["start"]),
                             end=float(current["end"]),
-                            text=current["text"],
+                            text=str(current["text"]),
                         )
                     )
-                continue
-
     return intervals
 
 
-def word_intervals_to_segments(
-    intervals: List[WordInterval],
-    silence_threshold: float,
-    max_segment_seconds: float,
-    min_segment_seconds: float = 3.0,
+def split_words_and_silences(
+    intervals: Sequence[WordInterval],
+) -> Tuple[List[WordInterval], List[SilenceInterval]]:
+    words: List[WordInterval] = []
+    silences: List[SilenceInterval] = []
+    for itv in intervals:
+        if itv.text.strip():
+            words.append(itv)
+        else:
+            silences.append(SilenceInterval(start=itv.start, end=itv.end))
+    return words, silences
+
+
+def summarize_silences(silences: Sequence[SilenceInterval]) -> str:
+    if not silences:
+        return "no silence intervals"
+    durations = sorted(s.duration for s in silences)
+
+    def q(v: float) -> float:
+        idx = round((len(durations) - 1) * v)
+        return durations[idx]
+
+    return (
+        f"count={len(durations)}, min={min(durations):.3f}s, "
+        f"p50={q(0.5):.3f}s, p75={q(0.75):.3f}s, "
+        f"p90={q(0.9):.3f}s, max={max(durations):.3f}s"
+    )
+
+
+def derive_min_silence_for_cut(
+    silences: Sequence[SilenceInterval],
+    manual_threshold: float,
+) -> float:
+    """Return silence threshold for primary cut candidates.
+
+    If `manual_threshold` is > 0, use it directly.
+    Otherwise derive threshold from TextGrid silence distribution.
+    """
+    if manual_threshold > 0:
+        return manual_threshold
+
+    durations = sorted(s.duration for s in silences if s.duration > 0.0)
+    if not durations:
+        return 0.30
+
+    p75_idx = round((len(durations) - 1) * 0.75)
+    p75 = durations[p75_idx]
+    return max(0.18, min(0.45, p75))
+
+
+def choose_cut_time(
+    segment_start: float,
+    candidate_silences: Sequence[SilenceInterval],
+    target_seconds: float,
+    min_seconds: float,
+    max_seconds: float,
+) -> Optional[float]:
+    best_time: Optional[float] = None
+    best_score: Optional[float] = None
+
+    for silence in candidate_silences:
+        cut = silence.midpoint
+        seg_len = cut - segment_start
+        if seg_len < min_seconds or seg_len > max_seconds:
+            continue
+        score = abs(seg_len - target_seconds)
+        if best_score is None or score < best_score:
+            best_score = score
+            best_time = cut
+
+    return best_time
+
+
+def build_segments_from_textgrid(
+    words: Sequence[WordInterval],
+    silences: Sequence[SilenceInterval],
+    target_seconds: float,
+    min_seconds: float,
+    max_seconds: float,
+    min_silence_for_cut: float,
 ) -> List[Tuple[float, float]]:
+    if not words:
+        return []
+
+    primary_silences = [s for s in silences if s.duration >= min_silence_for_cut]
+    fallback_silences = [s for s in silences if s.duration >= SHORT_PAUSE_FALLBACK_SECONDS]
     segments: List[Tuple[float, float]] = []
-    current_start: Optional[float] = None
-    last_end: Optional[float] = None
 
-    for interval in intervals:
-        if interval.text.strip():
-            if current_start is None:
-                current_start = interval.start
-            last_end = interval.end
-            continue
+    seg_start = words[0].start
+    i = 0
+    while i < len(words):
+        current_end = words[i].end
+        seg_len = current_end - seg_start
 
-        if current_start is None or last_end is None:
-            continue
+        if seg_len >= target_seconds:
+            candidate_pool = [
+                s
+                for s in primary_silences
+                if s.start >= seg_start and s.end <= current_end + 1e-6
+            ]
+            cut = choose_cut_time(
+                seg_start,
+                candidate_pool,
+                target_seconds,
+                min_seconds,
+                max_seconds,
+            )
 
-        gap = interval.end - interval.start
-        duration = last_end - current_start
-        if gap >= silence_threshold or duration >= max_segment_seconds:
-            if duration >= min_segment_seconds:
-                segments.append((current_start, last_end))
-            current_start = None
-            last_end = None
+            # If no long-pause cut exists, allow shorter pauses to stay near target length.
+            if cut is None:
+                fallback_pool = [
+                    s
+                    for s in fallback_silences
+                    if s.start >= seg_start and s.end <= current_end + 1e-6
+                ]
+                cut = choose_cut_time(
+                    seg_start,
+                    fallback_pool,
+                    target_seconds,
+                    min_seconds,
+                    max_seconds,
+                )
 
-    if current_start is not None and last_end is not None:
-        duration = last_end - current_start
-        if duration >= min_segment_seconds:
-            segments.append((current_start, last_end))
+            # If no suitable silence exists, cut at current word boundary to avoid runaway length.
+            if cut is None and seg_len >= max_seconds:
+                cut = current_end
 
-    return segments
+            if cut is not None and (cut - seg_start) >= min_seconds:
+                segments.append((seg_start, cut))
+                seg_start = cut
 
+        i += 1
 
-def enforce_max_duration(segments: List[Tuple[float, float]], max_seconds: float) -> List[Tuple[float, float]]:
-    if max_seconds <= 0:
-        return segments
+    final_end = words[-1].end
+    if final_end > seg_start + 0.20:
+        if final_end - seg_start < min_seconds and segments:
+            prev_start, _ = segments[-1]
+            segments[-1] = (prev_start, final_end)
+        else:
+            segments.append((seg_start, final_end))
 
-    capped: List[Tuple[float, float]] = []
+    # Safety cleanup.
+    normalized: List[Tuple[float, float]] = []
     for start, end in segments:
-        if end <= start:
-            continue
-        stack = [(start, end)]
-        while stack:
-            s, e = stack.pop()
-            length = e - s
-            if length <= max_seconds + 1e-3:
-                capped.append((s, e))
-            else:
-                mid = s + (length / 2.0)
-                if mid - s < 1e-3 or e - mid < 1e-3:
-                    capped.append((s, e))
-                else:
-                    stack.append((mid, e))
-                    stack.append((s, mid))
-    return sorted(capped, key=lambda x: x[0])
+        if end - start > 0.15:
+            normalized.append((round(start, 3), round(end, 3)))
+    return normalized
 
 
-def infer_segments_from_textgrid(
-    pipeline,
+def clip_video_segment(
     video_path: str,
-    segments: List[Tuple[float, float]],
+    output_path: str,
+    start_time: float,
+    end_time: float,
+    target_fps: int,
+) -> None:
+    duration = max(end_time - start_time, 0.1)
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-ss",
+        f"{start_time:.3f}",
+        "-i",
+        video_path,
+        "-t",
+        f"{duration:.3f}",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "fast",
+        "-r",
+        str(target_fps),
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-ar",
+        "16000",
+        "-ac",
+        "1",
+        "-loglevel",
+        "error",
+        output_path,
+    ]
+    subprocess.run(cmd, check=True)
+
+
+def enforce_fps(video_path: str, target_fps: int, work_dir: str) -> str:
+    output_path = os.path.join(work_dir, f"{Path(video_path).stem}_{target_fps}fps.mp4")
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        video_path,
+        "-vf",
+        f"fps={target_fps}",
+        "-r",
+        str(target_fps),
+        "-c:v",
+        "libx264",
+        "-preset",
+        "fast",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-ar",
+        "16000",
+        "-ac",
+        "1",
+        "-loglevel",
+        "error",
+        output_path,
+    ]
+    subprocess.run(cmd, check=True)
+    return output_path
+
+
+def infer_entire_video(pipeline: InferencePipeline, video_path: str) -> str:
+    try:
+        return pipeline(video_path).strip()
+    finally:
+        maybe_clear_cuda_cache(pipeline.device)
+
+
+def infer_segments(
+    pipeline: InferencePipeline,
+    video_path: str,
+    segments: Sequence[Tuple[float, float]],
+    work_dir: str,
+    target_fps: int,
 ) -> str:
-    transcripts: List[str] = []
-    with tempfile.TemporaryDirectory(prefix="avsr_sent_") as tmp_dir:
-        for idx, (start_time, end_time) in enumerate(segments):
-            segment_path = os.path.join(tmp_dir, f"segment_{idx:03d}.mp4")
-            clip_video_segment(video_path, segment_path, start_time, end_time)
-            text = pipeline(segment_path).strip()
-            transcripts.append(text)
-            maybe_clear_cuda_cache(pipeline.device)
-    return " ".join(t for t in transcripts if t).strip()
+    out: List[str] = []
+    seg_dir = os.path.join(work_dir, "segments")
+    os.makedirs(seg_dir, exist_ok=True)
+
+    for idx, (start, end) in enumerate(segments):
+        seg_path = os.path.join(seg_dir, f"segment_{idx:03d}.mp4")
+        clip_video_segment(video_path, seg_path, start, end, target_fps=target_fps)
+        out.append(pipeline(seg_path).strip())
+        maybe_clear_cuda_cache(pipeline.device)
+
+    return " ".join(t for t in out if t).strip()
 
 
-def transcribe_video(
-    pipeline,
-    video_path,
-    output_path,
-    textgrid_root=None,
-    auto_download_textgrid=True,
-    silence_threshold=0.5,
-    max_segment_seconds=15.0,
-):
-    dir_name = os.path.dirname(output_path) or "."
-    os.makedirs(dir_name, exist_ok=True)
-    print(f"Processing video: {video_path}")
+def extract_speaker_id(video_path: str) -> Optional[str]:
+    stem = Path(video_path).stem
+    token = stem.split("_", 1)[0]
+    return token if token.isdigit() else None
+
+
+def resolve_textgrid_root(textgrid_root: Optional[str]) -> Optional[Path]:
+    if textgrid_root:
+        p = Path(textgrid_root)
+        return p if p.exists() else None
+    for candidate in DEFAULT_TEXTGRID_ROOTS:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def ensure_textgrid_file(
+    video_path: str,
+    textgrid_root: Optional[str],
+    explicit_textgrid_path: Optional[str],
+) -> Optional[str]:
+    if explicit_textgrid_path:
+        p = Path(explicit_textgrid_path)
+        return str(p) if p.is_file() else None
+
+    root = resolve_textgrid_root(textgrid_root)
+    if root is None:
+        return None
+
+    stem = Path(video_path).stem
     speaker_id = extract_speaker_id(video_path)
-    textgrid_path = ensure_textgrid_file(video_path, speaker_id, textgrid_root, auto_download_textgrid)
-    segments: List[Tuple[float, float]] = []
+
+    candidates: List[Path] = [root / f"{stem}.TextGrid"]
+    if speaker_id is not None:
+        candidates.append(root / speaker_id / f"{stem}.TextGrid")
+
+    for c in candidates:
+        if c.is_file():
+            return str(c)
+    return None
+
+
+def build_segments(
+    video_path: str,
+    textgrid_root: Optional[str],
+    explicit_textgrid_path: Optional[str],
+    target_segment_seconds: float,
+    min_segment_seconds: float,
+    max_segment_seconds: float,
+    min_silence_seconds: float,
+    print_silence_stats: bool,
+) -> Tuple[List[Tuple[float, float]], float, Optional[str]]:
+    duration = get_video_duration(video_path)
+    textgrid_path = ensure_textgrid_file(video_path, textgrid_root, explicit_textgrid_path)
 
     if textgrid_path:
         intervals = parse_textgrid_words(textgrid_path)
-        segments = word_intervals_to_segments(
-            intervals,
-            silence_threshold=silence_threshold,
-            max_segment_seconds=max_segment_seconds,
+        words, silences = split_words_and_silences(intervals)
+        min_silence_for_cut = derive_min_silence_for_cut(silences, manual_threshold=min_silence_seconds)
+        if print_silence_stats:
+            print(f"Silence stats for {Path(video_path).name}: {summarize_silences(silences)}")
+            print(f"Using min_silence_for_cut={min_silence_for_cut:.3f}s")
+        segments = build_segments_from_textgrid(
+            words,
+            silences,
+            target_seconds=target_segment_seconds,
+            min_seconds=min_segment_seconds,
+            max_seconds=max_segment_seconds,
+            min_silence_for_cut=min_silence_for_cut,
         )
+        if segments:
+            return segments, duration, textgrid_path
 
-    video_duration: Optional[float] = None
+    # Fallback: keep full clip as one segment.
+    return [(0.0, duration)], duration, textgrid_path
 
-    def get_cached_duration() -> float:
-        nonlocal video_duration
-        if video_duration is None:
-            video_duration = get_video_duration(video_path)
-        return video_duration
 
-    if segments:
-        segments = enforce_max_duration(segments, min(MAX_INFERENCE_SECONDS, max_segment_seconds))
-    else:
-        if not textgrid_path:
-            print("TextGrid not found; falling back to duration-based segmentation.")
-        segments = enforce_max_duration(
-            [(0.0, get_cached_duration())],
-            min(MAX_INFERENCE_SECONDS, max_segment_seconds),
-        )
+def transcribe_video(
+    pipeline: InferencePipeline,
+    video_path: str,
+    output_path: str,
+    target_fps: int,
+    textgrid_root: Optional[str],
+    explicit_textgrid_path: Optional[str],
+    target_segment_seconds: float,
+    min_segment_seconds: float,
+    max_segment_seconds: float,
+    min_silence_seconds: float,
+    print_silence_stats: bool,
+) -> None:
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
-    use_direct = (
-        len(segments) == 1
-        and segments[0][0] <= 1e-3
-        and abs(segments[0][1] - get_cached_duration()) <= 1e-3
-        and (segments[0][1] - segments[0][0]) <= MAX_INFERENCE_SECONDS + 1e-3
+    segments, duration, textgrid_path = build_segments(
+        video_path=video_path,
+        textgrid_root=textgrid_root,
+        explicit_textgrid_path=explicit_textgrid_path,
+        target_segment_seconds=target_segment_seconds,
+        min_segment_seconds=min_segment_seconds,
+        max_segment_seconds=max_segment_seconds,
+        min_silence_seconds=min_silence_seconds,
+        print_silence_stats=print_silence_stats,
     )
 
-    try:
-        if use_direct:
-            transcript = infer_entire_video(pipeline, video_path)
-        else:
-            transcript = infer_segments_from_textgrid(pipeline, video_path, segments)
-    except RuntimeError as exc:
-        if "out of memory" in str(exc).lower():
-            raise exc
-        raise
+    if textgrid_path:
+        print(f"TextGrid: {textgrid_path}")
+    else:
+        print("TextGrid not found; using full-duration inference.")
 
-    with open(output_path, "w") as f:
-        f.write(transcript)
-    print(f"Saved transcript to {output_path}")
+    seg_info = ", ".join(f"[{s:.2f},{e:.2f}]" for s, e in segments)
+    print(f"Segments ({len(segments)}) -> {seg_info}")
+
+    with tempfile.TemporaryDirectory(prefix="avsr_unified_") as tmp_dir:
+        video_25fps = enforce_fps(video_path, target_fps=target_fps, work_dir=tmp_dir)
+
+        use_direct = (
+            len(segments) == 1
+            and segments[0][0] <= 1e-3
+            and abs(segments[0][1] - duration) <= 1e-3
+        )
+
+        if use_direct:
+            transcript = infer_entire_video(pipeline, video_25fps)
+        else:
+            transcript = infer_segments(pipeline, video_25fps, segments, tmp_dir, target_fps=target_fps)
+
+    with open(output_path, "w", encoding="utf-8") as handle:
+        handle.write(transcript)
+    print(f"Saved transcript: {output_path}")
 
 
 def process_directory(
-    pipeline,
-    source_dir,
-    target_root,
-    textgrid_root=None,
-    auto_download_textgrid=True,
-    silence_threshold=0.5,
-    max_segment_seconds=15.0,
-):
+    pipeline: InferencePipeline,
+    source_dir: str,
+    target_root: str,
+    target_fps: int,
+    textgrid_root: Optional[str],
+    target_segment_seconds: float,
+    min_segment_seconds: float,
+    max_segment_seconds: float,
+    min_silence_seconds: float,
+    print_silence_stats: bool,
+) -> None:
     source_dir = os.path.abspath(source_dir)
     target_root = os.path.abspath(target_root)
-    print(f"Processing directory tree {source_dir}\nSaving transcripts to {target_root}")
-
     if not os.path.isdir(source_dir):
-        raise ValueError(f"source_dir {source_dir} does not exist or is not a directory")
+        raise ValueError(f"source_dir does not exist: {source_dir}")
+
+    print(f"Processing tree: {source_dir}")
+    print(f"Output root: {target_root}")
 
     for root, _, files in os.walk(source_dir):
-        video_files = [f for f in files if f.lower().endswith(".mp4")]
+        video_files = sorted(f for f in files if f.lower().endswith(".mp4"))
         if not video_files:
             continue
+        rel = os.path.relpath(root, source_dir)
 
-        rel_dir = os.path.relpath(root, source_dir)
-        for video_file in sorted(video_files):
+        for video_file in video_files:
             video_path = os.path.join(root, video_file)
-            rel_output_dir = os.path.join(target_root, rel_dir)
-            transcript_name = f"{os.path.splitext(video_file)[0]}.txt"
-            output_path = os.path.join(rel_output_dir, transcript_name)
-            if os.path.isfile(output_path) and os.path.getsize(output_path) > 0:
-                print(f"Skipping existing transcript: {output_path}")
+            out_dir = os.path.join(target_root, rel)
+            out_path = os.path.join(out_dir, f"{Path(video_file).stem}.txt")
+
+            if os.path.isfile(out_path) and os.path.getsize(out_path) > 0:
+                print(f"Skipping existing transcript: {out_path}")
                 continue
 
-            print()
+            print(f"\nProcessing video: {video_path}")
             try:
                 transcribe_video(
-                    pipeline,
-                    video_path,
-                    output_path,
+                    pipeline=pipeline,
+                    video_path=video_path,
+                    output_path=out_path,
+                    target_fps=target_fps,
                     textgrid_root=textgrid_root,
-                    auto_download_textgrid=auto_download_textgrid,
-                    silence_threshold=silence_threshold,
+                    explicit_textgrid_path=None,
+                    target_segment_seconds=target_segment_seconds,
+                    min_segment_seconds=min_segment_seconds,
                     max_segment_seconds=max_segment_seconds,
+                    min_silence_seconds=min_silence_seconds,
+                    print_silence_stats=print_silence_stats,
                 )
             except Exception as exc:
                 print(f"Skipping {video_path} due to error: {exc}")
                 maybe_clear_cuda_cache(pipeline.device)
-                continue
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="Batch AVSR inference for directories of videos.")
-    parser.add_argument("--video-path", type=str, default=VIDEO_PATH,
-                        help="Path to a single video for quick testing")
-    parser.add_argument("--video-dir", type=str, default=None,
-                        help="Root directory that contains speaker folders with videos")
-    parser.add_argument("--output-dir", type=str, default="transcripts",
-                        help="Directory where transcripts will be stored")
-    parser.add_argument("--model-conf", type=str, default=MODEL_CONF,
-                        help="Path to model configuration JSON")
-    parser.add_argument("--model-path", type=str, default=MODEL_PATH,
-                        help="Path to model checkpoint (.pth)")
-    parser.add_argument("--textgrid-root", type=str, default=TEXTGRID_CACHE_ROOT,
-                        help="Directory used to cache/download TextGrid files from BEAT.")
-    parser.add_argument("--auto-download-textgrid", dest="auto_download_textgrid", action="store_true",
-                        help="Automatically download missing TextGrid files from Hugging Face (default).")
-    parser.add_argument("--no-auto-download-textgrid", dest="auto_download_textgrid", action="store_false",
-                        help="Disable automatic TextGrid downloads; fall back to single-pass inference if missing.")
-    parser.set_defaults(auto_download_textgrid=True)
-    parser.add_argument("--silence-threshold", type=float, default=0.6,
-                        help="Minimum silence duration (s) to split consecutive sentences.")
-    parser.add_argument("--max-segment-seconds", type=float, default=15.0,
-                        help="Maximum sentence segment length before forcing a break at the next silence.")
-    parser.add_argument("--detector", type=str, default="mediapipe",
-                        help="Face detector to use for landmark extraction")
-    parser.add_argument("--face-track", dest="face_track", action="store_true",
-                        help="Enable face tracking (landmark detection) for video modalities")
-    parser.add_argument("--no-face-track", dest="face_track", action="store_false",
-                        help="Disable face tracking if precomputed landmarks are supplied")
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Unified VSR inference with 25fps enforcement and TextGrid silence segmentation"
+    )
+    parser.add_argument("--video-path", type=str, default=VIDEO_PATH, help="Single video path")
+    parser.add_argument("--video-dir", type=str, default=None, help="Root directory of videos")
+    parser.add_argument("--output-dir", type=str, default=DEFAULT_OUTPUT_DIR, help="Transcript output root")
+    parser.add_argument("--model-conf", type=str, default=MODEL_CONF, help="Model config JSON path")
+    parser.add_argument("--model-path", type=str, default=MODEL_PATH, help="Model checkpoint path")
+    parser.add_argument("--target-fps", type=int, default=DEFAULT_TARGET_FPS, help="Input fps for inference")
+
+    parser.add_argument(
+        "--textgrid-root",
+        type=str,
+        default=None,
+        help="TextGrid root containing either <speaker>/<clip>.TextGrid or <clip>.TextGrid",
+    )
+    parser.add_argument(
+        "--textgrid-path",
+        type=str,
+        default=None,
+        help="Explicit TextGrid path for single-video mode",
+    )
+
+    parser.add_argument(
+        "--target-segment-seconds",
+        type=float,
+        default=DEFAULT_TARGET_SEGMENT_SECONDS,
+        help="Target segment length (seconds), default 8.0",
+    )
+    parser.add_argument(
+        "--min-segment-seconds",
+        type=float,
+        default=DEFAULT_MIN_SEGMENT_SECONDS,
+        help="Minimum segment length (seconds)",
+    )
+    parser.add_argument(
+        "--max-segment-seconds",
+        type=float,
+        default=DEFAULT_MAX_SEGMENT_SECONDS,
+        help="Hard maximum segment length (seconds)",
+    )
+    parser.add_argument(
+        "--min-silence-seconds",
+        type=float,
+        default=DEFAULT_MIN_SILENCE_SECONDS,
+        help="Minimum empty-interval duration in words tier; <=0 auto-derives from TextGrid p75",
+    )
+    parser.add_argument(
+        "--print-silence-stats",
+        action="store_true",
+        help="Print silence duration summary from TextGrid (analysis/debug)",
+    )
+
+    parser.add_argument("--detector", type=str, default="mediapipe", help="Landmark detector")
+    parser.add_argument("--face-track", dest="face_track", action="store_true")
+    parser.add_argument("--no-face-track", dest="face_track", action="store_false")
     parser.set_defaults(face_track=True)
-    parser.add_argument("--device", type=str, default=None,
-                        help="Device identifier, e.g., cuda:0 or cpu")
+    parser.add_argument("--device", type=str, default=None, help="cuda:0 or cpu")
     return parser.parse_args()
-    
-if __name__ == "__main__":
+
+
+def main() -> None:
     args = parse_args()
 
     if args.device:
         device = args.device
-        print(f"Using provided device: {device}")
+        print(f"Using device: {device}")
     elif torch.cuda.is_available():
         device = "cuda:0"
-        print(f"CUDA is available. Using device: {device}")
-        print(f"Device name: {torch.cuda.get_device_name(0)}")
+        print(f"CUDA available. Using {device}: {torch.cuda.get_device_name(0)}")
     else:
         device = "cpu"
-        print("CUDA is not available. Using CPU.")
+        print("CUDA unavailable. Using CPU")
 
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    modality = "video"
-    model_conf = args.model_conf if os.path.isabs(args.model_conf) else os.path.join(base_dir, args.model_conf)
-    model_path = args.model_path if os.path.isabs(args.model_path) else os.path.join(base_dir, args.model_path)
+    base_dir = Path(__file__).resolve().parent
+
+    model_conf = Path(args.model_conf)
+    if not model_conf.is_absolute():
+        model_conf = base_dir / model_conf
+
+    model_path = Path(args.model_path)
+    if not model_path.is_absolute():
+        model_path = base_dir / model_path
 
     pipeline = InferencePipeline(
-        modality,
-        model_path,
-        model_conf,
+        modality="video",
+        model_path=str(model_path),
+        model_conf=str(model_conf),
         detector=args.detector,
         face_track=args.face_track,
         device=device,
     )
 
-    textgrid_root = args.textgrid_root if os.path.isabs(args.textgrid_root) else os.path.join(base_dir, args.textgrid_root)
+    output_root = Path(args.output_dir)
+    if not output_root.is_absolute():
+        output_root = base_dir / output_root
+    output_root.mkdir(parents=True, exist_ok=True)
+
+    textgrid_root = args.textgrid_root
+    if textgrid_root and not os.path.isabs(textgrid_root):
+        textgrid_root = str(base_dir / textgrid_root)
 
     if args.video_dir:
-        source_dir = args.video_dir if os.path.isabs(args.video_dir) else os.path.join(base_dir, args.video_dir)
-        output_root = args.output_dir if os.path.isabs(args.output_dir) else os.path.join(base_dir, args.output_dir)
+        source_dir = Path(args.video_dir)
+        if not source_dir.is_absolute():
+            source_dir = base_dir / source_dir
+
         process_directory(
-            pipeline,
-            source_dir,
-            output_root,
+            pipeline=pipeline,
+            source_dir=str(source_dir),
+            target_root=str(output_root),
+            target_fps=args.target_fps,
             textgrid_root=textgrid_root,
-            auto_download_textgrid=args.auto_download_textgrid,
-            silence_threshold=args.silence_threshold,
+            target_segment_seconds=args.target_segment_seconds,
+            min_segment_seconds=args.min_segment_seconds,
             max_segment_seconds=args.max_segment_seconds,
+            min_silence_seconds=args.min_silence_seconds,
+            print_silence_stats=args.print_silence_stats,
         )
-    else:
-        video_path = args.video_path if os.path.isabs(args.video_path) else os.path.join(base_dir, args.video_path)
+        return
 
-        if not os.path.exists(video_path):
-            video_path = os.path.join(base_dir, "data/clip.mp4")
-            print(f"Provided video not found. Falling back to {video_path}")
+    video_path = Path(args.video_path)
+    if not video_path.is_absolute():
+        video_path = base_dir / video_path
+    if not video_path.exists():
+        fallback = base_dir / "data" / "clip.mp4"
+        print(f"Provided video not found. Falling back to {fallback}")
+        video_path = fallback
 
-        output_dir = args.output_dir if os.path.isabs(args.output_dir) else os.path.join(base_dir, args.output_dir)
-        transcript_name = f"{os.path.splitext(os.path.basename(video_path))[0]}.txt"
-        output_path = os.path.join(output_dir, transcript_name)
-        transcribe_video(
-            pipeline,
-            video_path,
-            output_path,
-            textgrid_root=textgrid_root,
-            auto_download_textgrid=args.auto_download_textgrid,
-            silence_threshold=args.silence_threshold,
-            max_segment_seconds=args.max_segment_seconds,
-        )
+    explicit_textgrid_path = args.textgrid_path
+    if explicit_textgrid_path and not os.path.isabs(explicit_textgrid_path):
+        explicit_textgrid_path = str(base_dir / explicit_textgrid_path)
+
+    output_path = output_root / f"{video_path.stem}.txt"
+    transcribe_video(
+        pipeline=pipeline,
+        video_path=str(video_path),
+        output_path=str(output_path),
+        target_fps=args.target_fps,
+        textgrid_root=textgrid_root,
+        explicit_textgrid_path=explicit_textgrid_path,
+        target_segment_seconds=args.target_segment_seconds,
+        min_segment_seconds=args.min_segment_seconds,
+        max_segment_seconds=args.max_segment_seconds,
+        min_silence_seconds=args.min_silence_seconds,
+        print_silence_stats=args.print_silence_stats,
+    )
+
+
+if __name__ == "__main__":
+    main()
