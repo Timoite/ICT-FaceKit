@@ -30,6 +30,9 @@ if str(TONGUE_ANIM_DIR) not in sys.path:
 
 from face_model_io_trimesh import load_face_model_trimesh  # type: ignore
 import generate_tongue_animation as gta  # type: ignore
+import cv2
+import pyrender
+import trimesh
 
 
 def parse_args() -> argparse.Namespace:
@@ -65,6 +68,7 @@ def parse_args() -> argparse.Namespace:
         "--output-dir",
         default=str(SCRIPT_DIR / "outputs" / "fullface_shift_compare"),
     )
+    parser.add_argument("--include-passive", action="store_true", default=False)
     parser.add_argument("--skip-existing", action="store_true", default=True)
     parser.add_argument("--no-skip-existing", dest="skip_existing", action="store_false")
     return parser.parse_args()
@@ -127,6 +131,131 @@ def mux_audio(video_path: Path, audio_path: Path, output_path: Path) -> None:
         str(output_path),
     ]
     subprocess.run(cmd, check=True)
+
+
+def render_video_with_passive_tongue(face_model, face_seq: np.ndarray, tongue_rig, output_path: Path) -> None:
+    print(f"Rendering PASSIVE tongue to {output_path}...")
+
+    width, height = 800, 600
+    renderer = pyrender.OffscreenRenderer(width, height)
+    video = cv2.VideoWriter(str(output_path), cv2.VideoWriter_fourcc(*"mp4v"), gta.FPS, (width, height))
+
+    eye = np.array([0.0, -2.0, 35.0], dtype=np.float32)
+    target = np.array([0.0, -2.0, 0.0], dtype=np.float32)
+    up = np.array([0, 1, 0], dtype=np.float32)
+    z = eye - target
+    z /= np.linalg.norm(z)
+    x = np.cross(up, z)
+    x /= np.linalg.norm(x)
+    y = np.cross(z, x)
+    cam_pose = np.eye(4)
+    cam_pose[:3, :3] = np.column_stack((x, y, z))
+    cam_pose[:3, 3] = eye
+
+    mat_skin = pyrender.MetallicRoughnessMaterial(
+        baseColorFactor=[0.5, 0.5, 0.5, 1.0],
+        metallicFactor=0.0,
+        roughnessFactor=0.8,
+        alphaMode="OPAQUE",
+    )
+    mat_tongue = pyrender.MetallicRoughnessMaterial(
+        baseColorFactor=[1.0, 0.6, 0.6, 1.0],
+        metallicFactor=0.0,
+        roughnessFactor=0.2,
+        alphaMode="OPAQUE",
+    )
+    mat_gums = pyrender.MetallicRoughnessMaterial(
+        baseColorFactor=[0.7, 0.2, 0.2, 1.0],
+        metallicFactor=0.0,
+        roughnessFactor=0.2,
+        alphaMode="OPAQUE",
+    )
+
+    scene = pyrender.Scene(bg_color=[0, 0, 0])
+    spot_pose = cam_pose.copy()
+    spot_pose[:3, 3] += [0, 10, -5]
+    scene.add(pyrender.PerspectiveCamera(yfov=np.pi / 3.0), pose=cam_pose)
+    scene.add(
+        pyrender.SpotLight(
+            color=np.ones(3),
+            intensity=100,
+            innerConeAngle=np.pi / 8,
+            outerConeAngle=np.pi / 4,
+        ),
+        pose=spot_pose,
+    )
+    scene.add(pyrender.PointLight(color=[1.0, 1.0, 1.0], intensity=400), pose=cam_pose)
+
+    is_tongue_vert = np.zeros(len(face_model.neutral_verts), dtype=bool)
+    is_tongue_vert[tongue_rig.global_indices] = True
+
+    is_gum_vert = np.zeros(len(face_model.neutral_verts), dtype=bool)
+    is_gum_vert[14062:17039] = True
+    is_gum_vert[is_tongue_vert] = False
+
+    frames = len(face_seq) if gta.MAX_SECONDS is None else min(len(face_seq), int(gta.MAX_SECONDS * gta.FPS))
+
+    for idx in range(frames):
+        if idx % 25 == 0:
+            print(f"  Frame {idx}/{frames}...")
+
+        weights = {name: val for name, val in zip(face_model.expression_names, face_seq[idx])}
+        verts = face_model.deform(weights).copy()
+
+        current_faces = face_model.faces
+        face_vert_is_tongue = is_tongue_vert[current_faces]
+        is_tongue_face = face_vert_is_tongue.all(axis=1)
+        face_vert_is_gum = is_gum_vert[current_faces]
+        is_gum_face = face_vert_is_gum.all(axis=1)
+        is_skin_face = ~(is_tongue_face | is_gum_face)
+
+        faces_tongue = current_faces[is_tongue_face]
+        faces_gum = current_faces[is_gum_face]
+        faces_skin = current_faces[is_skin_face]
+
+        nodes = []
+
+        if len(faces_skin) > 0:
+            mesh_skin = pyrender.Mesh.from_trimesh(
+                trimesh.Trimesh(verts, faces_skin, process=False),
+                material=mat_skin,
+                smooth=True,
+            )
+            if mesh_skin.primitives:
+                for primitive in mesh_skin.primitives:
+                    primitive.material.doubleSided = True
+            nodes.append(scene.add(mesh_skin))
+
+        if len(faces_tongue) > 0:
+            mesh_tongue = pyrender.Mesh.from_trimesh(
+                trimesh.Trimesh(verts, faces_tongue, process=False),
+                material=mat_tongue,
+                smooth=True,
+            )
+            if mesh_tongue.primitives:
+                for primitive in mesh_tongue.primitives:
+                    primitive.material.doubleSided = True
+            nodes.append(scene.add(mesh_tongue))
+
+        if len(faces_gum) > 0:
+            mesh_gum = pyrender.Mesh.from_trimesh(
+                trimesh.Trimesh(verts, faces_gum, process=False),
+                material=mat_gums,
+                smooth=True,
+            )
+            if mesh_gum.primitives:
+                for primitive in mesh_gum.primitives:
+                    primitive.material.doubleSided = True
+            nodes.append(scene.add(mesh_gum))
+
+        color, _ = renderer.render(scene)
+        video.write(cv2.cvtColor(color, cv2.COLOR_RGB2BGR))
+
+        for node in nodes:
+            scene.remove_node(node)
+
+    video.release()
+    renderer.delete()
 
 
 def main() -> None:
@@ -206,6 +335,24 @@ def main() -> None:
             video_no_audio.replace(video_with_audio)
 
         print(f"Saved: {video_with_audio}")
+
+    if args.include_passive:
+        passive_no_audio = output_dir / f"{args.dataset_id}_FULL_FACE_passive.mp4"
+        passive_with_audio = output_dir / f"{args.dataset_id}_FULL_FACE_passive_with_audio.mp4"
+
+        if args.skip_existing and passive_with_audio.is_file():
+            print(f"Skipping existing passive render: {passive_with_audio}")
+        else:
+            print("=" * 80)
+            print("Rendering FULL_FACE passive tongue")
+            render_video_with_passive_tongue(face_model, face_seq, tongue_rig, passive_no_audio)
+
+            if wav_path.is_file():
+                mux_audio(passive_no_audio, wav_path, passive_with_audio)
+            else:
+                passive_no_audio.replace(passive_with_audio)
+
+            print(f"Saved: {passive_with_audio}")
 
 
 if __name__ == "__main__":
