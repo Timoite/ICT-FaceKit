@@ -3,7 +3,7 @@ name = "ict-facekit"
 version = "0.1.0"
 description = "ICT morphable face model with tongue articulation optimization"
 readme = "README.md"
-requires-python = ">=3.9,<3.12"
+requires-python = ">=3.11,<3.12"
 
 dependencies = [
     "numpy>=1.24",
@@ -13,64 +13,47 @@ dependencies = [
     "imageio>=2.30",
     "imageio-ffmpeg>=0.4",
     "tqdm>=4.60",
-]
-
-[project.optional-dependencies]
-# Pyrender rendering (CPU-based, no GPU needed)
-pyrender = [
+    # Tongue rendering stack.
+    "opencv-python>=4.8",
     "pyrender>=0.1.45",
     "PyOpenGL>=3.1",
-]
-
-# PyTorch with MPS support for M1/M2 Mac
-pytorch-mps = [
+    # Audio inversion and AVSR inference.
     "torch>=2.0",
     "torchaudio>=2.0",
-]
-
-# WavLM speech inversion model
-wavlm = [
-    "torch>=2.0",
-    "torchaudio>=2.0",
-    "transformers>=4.30",
+    "torchvision>=0.15",
+    "transformers>=4.30,<5",
     "loralib>=0.1",
-]
-
-# BEAT dataset downloading
-beat = [
     "huggingface_hub>=0.20",
-]
-
-# VSR (Visual Speech Recognition) dependencies
-vsr = [
-    "torch>=2.0",
-    "torchaudio>=2.0",
     "hydra-core>=1.3.2",
-    "opencv-python>=4.5.5.62",
     "scikit-image>=0.13.0",
     "av>=10.0.0",
     "six>=1.16.0",
-    "pillow>=9.0",
-    "librosa>=0.9.0",
-    "espnet>=0.10.0",
-    "espnet-model-zoo>=0.1.0",
+    "mediapipe>=0.10.14",
+    # Transcript evaluation and normalization helpers.
+    "jiwer>=3.0",
+    "g2p-en>=2.1",
+    "nltk>=3.8",
+    "more-itertools>=10.0",
+    "regex>=2024.0.0",
+    "editdistance>=0.8",
+    "torch-complex>=0.4",
+    "pandas>=2.2",
 ]
 
-# Full feature set (optimized for M1 Mac)
-all-m1 = [
-    "ict-facekit[pyrender]",
-    "ict-facekit[pytorch-mps]",
-    "ict-facekit[wavlm]",
-    "ict-facekit[beat]",
-    "ict-facekit[vsr]",
-]
+[project.optional-dependencies]
+# RetinaFace support is still intentionally excluded here: the upstream
+# AutoAVSR README installs it from source rather than from a stable wheel.
+retinaface = []
 
-[tool.uv]
-dev-dependencies = []
+[tool.uv.sources]
+torch = { index = "pytorch-cu121" }
+torchaudio = { index = "pytorch-cu121" }
+torchvision = { index = "pytorch-cu121" }
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+[[tool.uv.index]]
+name = "pytorch-cu121"
+url = "https://download.pytorch.org/whl/cu121"
+explicit = true
 
-[tool.hatch.build.targets.wheel]
-packages = []
+[dependency-groups]
+dev = []
