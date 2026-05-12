@@ -13,11 +13,9 @@ dependencies = [
     "imageio>=2.30",
     "imageio-ffmpeg>=0.4",
     "tqdm>=4.60",
-    # Tongue rendering stack.
     "opencv-python>=4.8",
     "pyrender>=0.1.45",
     "PyOpenGL>=3.1",
-    # Audio inversion and AVSR inference.
     "torch>=2.0",
     "torchaudio>=2.0",
     "torchvision>=0.15",
@@ -29,7 +27,6 @@ dependencies = [
     "av>=10.0.0",
     "six>=1.16.0",
     "mediapipe>=0.10.14",
-    # Transcript evaluation and normalization helpers.
     "jiwer>=3.0",
     "g2p-en>=2.1",
     "nltk>=3.8",
@@ -41,8 +38,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# RetinaFace support is still intentionally excluded here: the upstream
-# AutoAVSR README installs it from source rather than from a stable wheel.
 retinaface = []
 
 [tool.uv.sources]

@@ -3,9 +3,6 @@
 Run VSR inference and compute VER/Viseme accuracy against a fixed ground truth.
 
 Default usage is aligned with the current ICT-FaceKit layout and ground truth file.
-
-This script also appends a human-readable comparison report so repeated runs
-accumulate into a longer research log.
 """
 
 from __future__ import annotations
@@ -27,6 +24,9 @@ if str(PROJECT_ROOT) not in sys.path:
 from evaluation_script.ver import calculate_ver
 
 
+DEFAULT_HYPOTHESIS = "active tongue should outperform passive tongue on same-speaker Wayne data"
+
+
 def normalize_for_wer(text: str) -> str:
     """Lowercase + remove punctuation + collapse spaces for stable WER."""
     text = text.lower()
@@ -36,7 +36,7 @@ def normalize_for_wer(text: str) -> str:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Evaluate VSR outputs with VER + WER and append a composite report.")
+    parser = argparse.ArgumentParser(description="Evaluate VSR outputs with VER + WER and write a composite report.")
     parser.add_argument(
         "--videos",
         nargs="+",
@@ -101,7 +101,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--report-path",
         default=str(PROJECT_ROOT / "tongue_scripts" / "outputs" / "vsr_composite_report.md"),
-        help="Markdown report path (append mode).",
+        help="Markdown report path.",
+    )
+    parser.add_argument(
+        "--report-mode",
+        choices=["append", "write"],
+        default="append",
+        help="Whether to append to or overwrite the report file.",
+    )
+    parser.add_argument("--dataset-id", default=None, help="Dataset identifier recorded in the report metadata.")
+    parser.add_argument("--speaker-id", default=None, help="Speaker identifier recorded in the report metadata.")
+    parser.add_argument(
+        "--hypothesis",
+        default=DEFAULT_HYPOTHESIS,
+        help="Research hypothesis statement recorded in the report metadata.",
     )
     return parser.parse_args()
 
@@ -113,16 +126,27 @@ def build_report_block(
     args: argparse.Namespace,
 ) -> str:
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    dataset_id = args.dataset_id or Path(rows_sorted[0]["video"]).name.split("_with_tongue")[0].split("_passive_tongue")[0]
 
     lines: list[str] = []
     lines.append(f"## Run: {experiment_name} | {now}")
     lines.append("")
     lines.append("### Settings")
+    lines.append(f"- dataset id: `{dataset_id}`")
+    if args.speaker_id:
+        lines.append(f"- speaker id: `{args.speaker_id}`")
     lines.append(f"- config: `{args.config_filename}`")
     lines.append(f"- infer mode: `{args.infer_mode}`")
     lines.append(f"- vowel mode: `{args.vowel_mode}`")
     lines.append(f"- detector: `{args.detector}`")
     lines.append(f"- infer script: `{args.infer_script}`")
+    lines.append(f"- ground truth source: `{args.ground_truth}`")
+    lines.append(f"- report mode: `{args.report_mode}`")
+    lines.append("")
+    lines.append("### Experiment Metadata")
+    lines.append(f"- hypothesis: {args.hypothesis}")
+    for r in rows_sorted:
+        lines.append(f"- video: `{r['video']}`")
     lines.append("")
     lines.append("### VER Summary")
     lines.append("| Video | VER | WER(norm) | WER(raw) | Composite (0.5*VER + 0.5*WER_norm) | Viseme Accuracy | Word Accuracy(norm) | HYP words |")
@@ -230,9 +254,7 @@ def run_inference_segmented(
         return out_txt.read_text(encoding="utf-8", errors="ignore").strip()
 
 
-def main() -> None:
-    args = parse_args()
-
+def validate_inputs(args: argparse.Namespace) -> tuple[Path, Path, Path, list[Path], Path | None]:
     gt_path = Path(args.ground_truth)
     infer_script = Path(args.infer_script)
     infer_pipeline_script = Path(args.infer_pipeline_script)
@@ -249,6 +271,12 @@ def main() -> None:
     if args.infer_mode == "segmented":
         if textgrid_path is None or not textgrid_path.is_file():
             raise SystemExit("--textgrid-path is required and must exist when --infer-mode segmented")
+
+    return gt_path, infer_script, infer_pipeline_script, video_paths, textgrid_path
+
+
+def evaluate_videos(args: argparse.Namespace) -> tuple[str, list[dict]]:
+    gt_path, infer_script, infer_pipeline_script, video_paths, textgrid_path = validate_inputs(args)
 
     ground_truth = gt_path.read_text(encoding="utf-8", errors="ignore").strip().lower()
 
@@ -333,17 +361,30 @@ def main() -> None:
             f"  {name:50s}  VER={r['ver']:.4f}  WER(norm)={r['wer_norm']:.4f}  Composite={r['composite_index']:.4f}"
         )
 
-    report_path = Path(args.report_path)
+    return ground_truth, rows_sorted
+
+
+def write_report(report_path: Path, report_block: str, report_mode: str) -> None:
     report_path.parent.mkdir(parents=True, exist_ok=True)
+    file_mode = "a" if report_mode == "append" else "w"
+    with report_path.open(file_mode, encoding="utf-8") as f:
+        f.write(report_block)
+    print(f"Report {'appended' if report_mode == 'append' else 'written'}: {report_path}")
+
+
+def main() -> None:
+    args = parse_args()
+
+    ground_truth, rows_sorted = evaluate_videos(args)
+
+    report_path = Path(args.report_path)
     report_block = build_report_block(
         experiment_name=args.experiment_name,
         ground_truth=ground_truth,
         rows_sorted=rows_sorted,
         args=args,
     )
-    with report_path.open("a", encoding="utf-8") as f:
-        f.write(report_block)
-    print(f"Report appended: {report_path}")
+    write_report(report_path, report_block, args.report_mode)
 
 
 if __name__ == "__main__":

@@ -34,11 +34,9 @@ def apply_transform(transform, img, std_size):
 
 def cut_patch(img, landmarks, height, width, threshold=5):
     center_x, center_y = np.mean(landmarks, axis=0)
-    # Check for too much bias in height and width
-    if abs(center_y - img.shape[0] / 2) > height + threshold:
-        raise Exception('too much bias in height')
-    if abs(center_x - img.shape[1] / 2) > width + threshold:
-        raise Exception('too much bias in width')
+    # Synthetic renders can be framed off-center relative to the real-video
+    # assumptions used by this cropper. Clamp the crop window instead of
+    # failing hard so VSR can still evaluate the generated clips.
     # Calculate bounding box coordinates
     y_min = int(round(np.clip(center_y - height, 0, img.shape[0])))
     y_max = int(round(np.clip(center_y + height, 0, img.shape[0])))

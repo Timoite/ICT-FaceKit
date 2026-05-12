@@ -39,7 +39,7 @@ if str(TONGUE_ANIMATION_DIR) not in sys.path:
 
 from face_model_io_trimesh import load_face_model_trimesh
 from generate_tongue_animation import (
-    process_beat_data,
+    load_blendshape_json_sequence,
     load_ema_motion,
     FaceKitTongueRig,
     TONGUE_CONFIG,
@@ -165,7 +165,12 @@ def load_data():
         print(f"  Searched in: {BEAT_JSON_PATH}")
         face_seq = np.zeros((375, len(face_model.expression_names)), dtype=np.float32)
     else:
-        face_seq = process_beat_data(BEAT_JSON_PATH, face_model, target_fps=FPS)
+        face_seq = load_blendshape_json_sequence(
+            BEAT_JSON_PATH,
+            face_model,
+            source_fps=60,
+            target_fps=FPS,
+        )
 
     # Apply jawOpen offset correction
     print("\n" + "="*60)
@@ -226,13 +231,13 @@ def load_data():
 # ==========================================
 # RENDERING
 # ==========================================
-def render_video_with_dynamic_tongue(face_model, face_seq, tongue_rig, ema_seq, output_path):
+def render_video_with_dynamic_tongue(face_model, face_seq, tongue_rig, ema_seq, output_path, fps=FPS, max_seconds=MAX_SECONDS):
     """Render video with dynamic tongue driven by EMA motion."""
     print(f"Rendering video with DYNAMIC tongue to {output_path}...")
 
     W, H = 800, 600
     renderer = pyrender.OffscreenRenderer(W, H)
-    video = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*"mp4v"), FPS, (W, H))
+    video = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (W, H))
 
     # Camera setup (front view)
     eye = np.array([0.0, -2.0, 35.0], dtype=np.float32)
@@ -291,13 +296,13 @@ def render_video_with_dynamic_tongue(face_model, face_seq, tongue_rig, ema_seq, 
     is_gum_vert[14062:17039] = True
     is_gum_vert[is_tongue_vert] = False
 
-    if MAX_SECONDS is None:
+    if max_seconds is None:
         frames = min(len(face_seq), len(ema_seq))
     else:
-        frames = min(len(face_seq), len(ema_seq), int(MAX_SECONDS * FPS))
+        frames = min(len(face_seq), len(ema_seq), int(max_seconds * fps))
 
     for i in range(frames):
-        if i % 25 == 0:
+        if i % max(1, int(round(fps))) == 0:
             print(f"  Frame {i}/{frames}...")
 
         # Deform face
@@ -358,13 +363,13 @@ def render_video_with_dynamic_tongue(face_model, face_seq, tongue_rig, ema_seq, 
     renderer.delete()
     print(f"  ✓ Saved: {output_path}")
 
-def render_video_with_passive_tongue(face_model, face_seq, tongue_rig, output_path):
+def render_video_with_passive_tongue(face_model, face_seq, tongue_rig, output_path, fps=FPS, max_seconds=MAX_SECONDS):
     """Render video with passive tongue from generic_neutral_mesh."""
     print(f"Rendering video with PASSIVE tongue to {output_path}...")
 
     W, H = 800, 600
     renderer = pyrender.OffscreenRenderer(W, H)
-    video = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*"mp4v"), FPS, (W, H))
+    video = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (W, H))
 
     # Camera setup (front view)
     eye = np.array([0.0, -2.0, 35.0], dtype=np.float32)
@@ -423,13 +428,13 @@ def render_video_with_passive_tongue(face_model, face_seq, tongue_rig, output_pa
     is_gum_vert[14062:17039] = True
     is_gum_vert[is_tongue_vert] = False
 
-    if MAX_SECONDS is None:
+    if max_seconds is None:
         frames = len(face_seq)
     else:
-        frames = min(len(face_seq), int(MAX_SECONDS * FPS))
+        frames = min(len(face_seq), int(max_seconds * fps))
 
     for i in range(frames):
-        if i % 25 == 0:
+        if i % max(1, int(round(fps))) == 0:
             print(f"  Frame {i}/{frames}...")
 
         # Deform face (NO dynamic tongue deformation)

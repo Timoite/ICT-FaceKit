@@ -6,8 +6,6 @@ import cv2
 import subprocess
 import os
 import sys
-import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation, FFMpegWriter
 from scipy.interpolate import make_interp_spline, interp1d
 from pathlib import Path
 
@@ -65,37 +63,79 @@ BONE_INDICES    = [16661, 16757]
 # ==========================================
 # PART 1: DATA LOADING
 # ==========================================
-def process_beat_data(json_path, face_model, target_fps=50):
-    if not os.path.exists(json_path): 
-        return np.zeros((100, 52))
-    
+def _infer_source_fps(anim_data, raw_frames, fallback_fps=60):
+    for key in ("fps", "source_fps"):
+        if key in anim_data:
+            return float(anim_data[key])
+    metadata = anim_data.get("metadata", {})
+    for key in ("fps", "source_fps"):
+        if key in metadata:
+            return float(metadata[key])
+
+    frame_times = [frame.get("time") for frame in raw_frames if isinstance(frame, dict) and "time" in frame]
+    if len(frame_times) >= 2:
+        duration = float(frame_times[-1]) - float(frame_times[0])
+        if duration > 0:
+            return (len(frame_times) - 1) / duration
+    return float(fallback_fps)
+
+
+def load_blendshape_json_sequence(
+    json_path,
+    face_model,
+    source_fps=None,
+    target_fps=50,
+    name_mapper=map_beat_to_ict_names,
+):
+    """Load any named blendshape JSON into ICT FaceKit expression order."""
+
+    if not os.path.exists(json_path):
+        return np.zeros((100, len(face_model.expression_names)), dtype=np.float32)
+
     anim_data = load_animation(json_path)
-    beat_names = anim_data['names']
-    raw_frames = anim_data['frames']
-    
-    source_fps = 60
+    source_names = anim_data["names"]
+    raw_frames = anim_data["frames"]
+    if not raw_frames:
+        return np.zeros((0, len(face_model.expression_names)), dtype=np.float32)
+
+    source_fps = float(source_fps) if source_fps is not None else _infer_source_fps(anim_data, raw_frames)
     duration = len(raw_frames) / source_fps
-    n_target_frames = int(duration * target_fps)
-    
+    n_target_frames = max(1, int(round(duration * target_fps))) if target_fps else len(raw_frames)
+
     ict_expr_names = face_model.expression_names
     ict_name_to_idx = {name: i for i, name in enumerate(ict_expr_names)}
-    n_ict = len(ict_expr_names)
-    
-    source_data = np.zeros((len(raw_frames), n_ict), dtype=np.float32)
-    
-    for f_idx, frame in enumerate(raw_frames):
-        for b_idx, weight in enumerate(frame['weights']):
-            b_name = beat_names[b_idx]
-            mapped_names = map_beat_to_ict_names(b_name)
-            for m_name in mapped_names:
-                if m_name in ict_name_to_idx:
-                    source_data[f_idx, ict_name_to_idx[m_name]] = weight
-    
-    if len(source_data) < 2: return source_data
+    source_data = np.zeros((len(raw_frames), len(ict_expr_names)), dtype=np.float32)
+
+    for frame_idx, frame in enumerate(raw_frames):
+        weights = frame.get("weights", frame.get("values", []))
+        for source_idx, weight in enumerate(weights):
+            if source_idx >= len(source_names):
+                break
+            for mapped_name in name_mapper(source_names[source_idx]):
+                ict_idx = ict_name_to_idx.get(mapped_name)
+                if ict_idx is not None:
+                    source_data[frame_idx, ict_idx] = weight
+
+    if target_fps is None or len(source_data) == n_target_frames:
+        return source_data
+    if len(source_data) < 2:
+        return np.repeat(source_data, n_target_frames, axis=0)
+
     x_source = np.linspace(0, duration, len(source_data))
     x_target = np.linspace(0, duration, n_target_frames)
-    f_interp = interp1d(x_source, source_data, axis=0, kind='cubic', fill_value="extrapolate")
-    return f_interp(x_target)
+    interp_kind = "cubic" if len(source_data) >= 4 else "linear"
+    f_interp = interp1d(x_source, source_data, axis=0, kind=interp_kind, fill_value="extrapolate")
+    return f_interp(x_target).astype(np.float32)
+
+
+def process_beat_data(json_path, face_model, target_fps=50):
+    return load_blendshape_json_sequence(
+        json_path,
+        face_model,
+        source_fps=60,
+        target_fps=target_fps,
+        name_mapper=map_beat_to_ict_names,
+    )
 
 def load_ema_motion(motion_path, std_path, rig_anchors, scalar):
     if not os.path.exists(motion_path): raise FileNotFoundError(motion_path)
@@ -256,6 +296,9 @@ class FaceKitTongueRig:
 # PART 3: RENDERERS
 # ==========================================
 def run_matplotlib_debug(tongue_rig, ema_seq):
+    import matplotlib.pyplot as plt
+    from matplotlib.animation import FuncAnimation, FFMpegWriter
+
     print("Starting Matplotlib Debug View...")
     frames = min(len(ema_seq), int(MAX_SECONDS * FPS))
     
