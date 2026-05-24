@@ -68,6 +68,11 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--tongue-shift-seconds", type=float, default=0.120)
     p.add_argument(
+        "--tongue-shift-db",
+        default=None,
+        help="Optional SQLite cache from estimate_lip_aperture_shifts.py. If a row exists for this clip, it overrides --tongue-shift-seconds.",
+    )
+    p.add_argument(
         "--use-gpu",
         action="store_true",
         help="Use pyrender's EGL/OpenGL GPU backend for offscreen rendering.",
@@ -98,7 +103,25 @@ def main() -> None:
     rd.BEAT_JSON_PATH = str(speaker_root / f"{dataset_id}.json")
     rd.AUDIO_PATH = str(speaker_root / f"{dataset_id}.wav")
     rd.MOTION_PATH = str(Path(args.motion_path))
-    rd.TONGUE_SHIFT_SECONDS = float(args.tongue_shift_seconds)
+
+    tongue_shift_seconds = float(args.tongue_shift_seconds)
+    if args.tongue_shift_db:
+        from tongue_scripts.analysis.time_shift_lookup import lookup_render_shift
+
+        cached_shift = lookup_render_shift(
+            args.tongue_shift_db, str(args.speaker_id), dataset_id
+        )
+        if cached_shift is not None:
+            tongue_shift_seconds = cached_shift
+            print(
+                f"[SHIFT DB] {dataset_id}: using cached tongue shift {tongue_shift_seconds:+.4f}s"
+            )
+        else:
+            print(
+                f"[SHIFT DB] {dataset_id}: no cached row in {args.tongue_shift_db}; "
+                f"falling back to {tongue_shift_seconds:+.4f}s"
+            )
+    rd.TONGUE_SHIFT_SECONDS = tongue_shift_seconds
 
     out_dir = video_output_dir(Path(args.output_dir), str(args.speaker_id), dataset_id)
     out_dir.mkdir(parents=True, exist_ok=True)

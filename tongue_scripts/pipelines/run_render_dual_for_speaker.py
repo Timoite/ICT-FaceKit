@@ -52,7 +52,12 @@ def parse_args() -> argparse.Namespace:
         "--tongue-shift-seconds",
         type=float,
         default=0.12,
-        help="Global tongue delay in seconds",
+        help="Fallback global tongue delay in seconds",
+    )
+    parser.add_argument(
+        "--tongue-shift-db",
+        default=None,
+        help="Optional SQLite cache from estimate_lip_aperture_shifts.py; per-clip rows override the fallback shift.",
     )
     parser.add_argument(
         "--generate-missing-motion",
@@ -187,6 +192,8 @@ def main() -> None:
                 "--tongue-shift-seconds",
                 str(args.tongue_shift_seconds),
             ]
+            if args.tongue_shift_db:
+                render_cmd.extend(["--tongue-shift-db", str(args.tongue_shift_db)])
             if args.use_gpu:
                 render_cmd.append("--use-gpu")
 
