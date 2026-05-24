@@ -46,6 +46,8 @@ A small set of top-level scripts remain on purpose as convenient front-door entr
 
 Most other scripts should be used from their grouped folders directly.
 
+If a new script needs to be created, create it within the most suitable category folder rather than at the top level, unless it is intentionally a front-door entry point.
+
 ### Core generation and rendering
 
 - `invert.py`: audio -> articulatory `.npy`
