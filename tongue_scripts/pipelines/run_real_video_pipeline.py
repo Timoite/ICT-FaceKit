@@ -12,11 +12,10 @@ import numpy as np
 from scipy.interpolate import interp1d
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = SCRIPT_DIR.parent
+TONGUE_SCRIPTS_DIR = SCRIPT_DIR.parent
+PROJECT_ROOT = TONGUE_SCRIPTS_DIR.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-if str(SCRIPT_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPT_DIR))
 
 from tongue_scripts.real_video.arkit_to_ict import (
     convert_csv_to_ict_outputs,
@@ -29,11 +28,11 @@ from tongue_scripts.real_video.smirk_flame_to_arkit import fit_smirk_vertices_fi
 
 
 DEFAULT_WAVLM_CHECKPOINT = (
-    SCRIPT_DIR
+    TONGUE_SCRIPTS_DIR
     / "inversion_checkpoints"
     / "lora_multispeaker_consistency_alpha_0.25_threshold_0_vctk_vvn_4tonguepoints"
 )
-DEFAULT_STD_PATH = SCRIPT_DIR / "normalising_vectors" / "JW13_4points_std.npy"
+DEFAULT_STD_PATH = TONGUE_SCRIPTS_DIR / "normalising_vectors" / "JW13_4points_std.npy"
 DEFAULT_FACE_MODEL_DIR = PROJECT_ROOT / "FaceXModel"
 
 
@@ -99,7 +98,7 @@ def extract_audio(video_path: Path, audio_path: Path) -> Path:
 
 
 def run_wavlm_inversion(wav_path: Path, out_path: Path, checkpoint_path: Path) -> Path:
-    from tongue_scripts.invert import infer_ema
+    from tongue_scripts.inversion.invert import infer_ema
 
     if not checkpoint_path.is_file():
         raise FileNotFoundError(f"Missing WavLM checkpoint: {checkpoint_path}")
@@ -141,7 +140,7 @@ def render_outputs(
     fps: float,
     tongue_shift_seconds: float,
 ) -> tuple[Path, Path]:
-    from tongue_scripts.render_dual_tongue_comparison import (
+    from tongue_scripts.rendering.render_dual_tongue_comparison import (
         ANCHOR_INDICES,
         BONE_INDICES,
         TONGUE_CONFIG,

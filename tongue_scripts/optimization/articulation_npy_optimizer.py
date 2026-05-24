@@ -32,16 +32,14 @@ from typing import Dict, List, Optional, Tuple
 import matplotlib.pyplot as plt
 import numpy as np
 
-SCRIPT_DIR = Path(__file__).parent.resolve()
-PROJECT_ROOT = SCRIPT_DIR.parent
-TONGUE_ANIMATION_DIR = SCRIPT_DIR / "tongue_animation"
+SCRIPT_DIR = Path(__file__).resolve().parent
+TONGUE_SCRIPTS_DIR = SCRIPT_DIR.parent
+PROJECT_ROOT = TONGUE_SCRIPTS_DIR.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-if str(TONGUE_ANIMATION_DIR) not in sys.path:
-    sys.path.insert(0, str(TONGUE_ANIMATION_DIR))
 
-from face_model_io_trimesh import load_face_model_trimesh
-from generate_tongue_animation import (
+from tongue_scripts.tongue_animation.face_model_io_trimesh import load_face_model_trimesh
+from tongue_scripts.tongue_animation.generate_tongue_animation import (
     FaceKitTongueRig,
     TONGUE_SLICE,
     ANCHOR_INDICES,
@@ -704,7 +702,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--textgrid-path", default=None)
     parser.add_argument("--phone-tier", default="phones")
     parser.add_argument("--face-model-dir", default=str(PROJECT_ROOT / "FaceXModel"))
-    parser.add_argument("--std-path", default=str(SCRIPT_DIR / "normalising_vectors" / "JW13_4points_std.npy"))
+    parser.add_argument("--std-path", default=str(TONGUE_SCRIPTS_DIR / "normalising_vectors" / "JW13_4points_std.npy"))
     parser.add_argument("--scalar", type=float, default=0.20)
     parser.add_argument("--fps", type=float, default=FPS_DEFAULT)
 
@@ -870,9 +868,9 @@ def main() -> None:
 
     # --- Resolve paths ---
     npy_path = Path(args.npy_path) if args.npy_path else (
-        SCRIPT_DIR / "outputs" / f"{args.dataset_id}.npy")
+        TONGUE_SCRIPTS_DIR / "outputs" / f"{args.dataset_id}.npy")
     out_path = Path(args.out_path) if args.out_path else (
-        SCRIPT_DIR / "outputs" / f"{args.dataset_id}_optimized.npy")
+        TONGUE_SCRIPTS_DIR / "outputs" / f"{args.dataset_id}_optimized.npy")
     textgrid_path = Path(args.textgrid_path) if args.textgrid_path else (
         PROJECT_ROOT / "data" / "beat_cache" / "beat_english_v0.2.1"
         / "beat_english_v0.2.1" / "1" / f"{args.dataset_id}.TextGrid"

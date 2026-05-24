@@ -14,16 +14,14 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 import matplotlib.pyplot as plt
 
-SCRIPT_DIR = Path(__file__).parent.resolve()
-PROJECT_ROOT = SCRIPT_DIR.parent
-TONGUE_ANIMATION_DIR = SCRIPT_DIR / "tongue_animation"
+SCRIPT_DIR = Path(__file__).resolve().parent
+TONGUE_SCRIPTS_DIR = SCRIPT_DIR.parent
+PROJECT_ROOT = TONGUE_SCRIPTS_DIR.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-if str(TONGUE_ANIMATION_DIR) not in sys.path:
-    sys.path.insert(0, str(TONGUE_ANIMATION_DIR))
 
-from face_model_io_trimesh import load_face_model_trimesh
-from generate_tongue_animation import (
+from tongue_scripts.tongue_animation.face_model_io_trimesh import load_face_model_trimesh
+from tongue_scripts.tongue_animation.generate_tongue_animation import (
     process_beat_data,
     load_ema_motion,
     FaceKitTongueRig,
@@ -55,12 +53,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--tongue-npy-dir",
-        default=str(SCRIPT_DIR / "outputs"),
+        default=str(TONGUE_SCRIPTS_DIR / "outputs"),
         help="Directory containing WavLM tongue .npy files",
     )
     parser.add_argument(
         "--std-path",
-        default=str(SCRIPT_DIR / "normalising_vectors" / "JW13_4points_std.npy"),
+        default=str(TONGUE_SCRIPTS_DIR / "normalising_vectors" / "JW13_4points_std.npy"),
         help="Tongue normalization std .npy",
     )
     parser.add_argument(
@@ -104,7 +102,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--plot-path",
-        default=str(SCRIPT_DIR / "outputs" / "phoneme_lag_plot.png"),
+        default=str(TONGUE_SCRIPTS_DIR / "outputs" / "phoneme_lag_plot.png"),
         help="Optional output PNG for signal/correlation plot",
     )
     parser.add_argument(

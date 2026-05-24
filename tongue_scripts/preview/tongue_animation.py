@@ -11,11 +11,11 @@ import trimesh
 from scipy.spatial.distance import cdist
 
 # --- FILE PATHS -------------------------------------------------------------
-BASE_DIR = Path(__file__).parent
-PATH_TONGUE = BASE_DIR / 'seperated_tongue.obj'
-PATH_DATA = BASE_DIR / '26/npy/26_reamey_0_1_1.npy'
-PATH_STD = BASE_DIR / 'normalising_vectors/JW13_4points_std.npy'
-OUTPUT_GIF = BASE_DIR / 'exports' / 'tongue_animation.gif'
+BASE_DIR = Path(__file__).resolve().parent.parent
+PATH_TONGUE = BASE_DIR / "seperated_tongue.obj"
+PATH_DATA = BASE_DIR / "outputs" / "1_wayne_0_75_75.npy"
+PATH_STD = BASE_DIR / "normalising_vectors" / "JW13_4points_std.npy"
+OUTPUT_GIF = BASE_DIR / "outputs" / "tongue_animation_preview.gif"
 
 # --- CONTROL POINTS & PARAMETERS -------------------------------------------
 CONTROL_POINTS_REST = np.array([

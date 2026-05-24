@@ -26,8 +26,8 @@ Some older docs mention scripts such as `batch_render_corrected.py` or `test_ton
 - `tongue_scripts/run_render_dual_for_dataset.py`
 - `tongue_scripts/multi_speaker_short_pipeline.py`
 - `tongue_scripts/evaluate_vsr_ver.py`
-- `tongue_scripts/jaw_tongue_sync_script/jaw_tongue_sync_analysis.py`
-- `tongue_scripts/phoneme_lag_probe.py`
+- `tongue_scripts/timing/jaw_tongue_sync_analysis.py`
+- `tongue_scripts/analysis/phoneme_lag_probe.py`
 - `tongue_scripts/ground_truth_tools/tongue_gt_editor.py`
 - `tongue_scripts/ground_truth_tools/tongue_gt_compare.py`
 - `ADFA_EVALUATION/Visual_Speech_Recognition_for_Multiple_Languages/infer.py`
@@ -61,7 +61,7 @@ Some older docs mention scripts such as `batch_render_corrected.py` or `test_ton
   - applies `jawOpen` minimum-offset correction before rendering
   - optionally applies a global tongue delay via `TONGUE_SHIFT_SECONDS`
   - muxes audio back with `ffmpeg`
-- `tongue_scripts/tongue_animation.py` is a standalone preview / debugging script for the separated tongue mesh, not the main evaluation pipeline.
+- `tongue_scripts/preview/tongue_animation.py` is a standalone preview / debugging script for the separated tongue mesh, not the main evaluation pipeline.
 
 ### ADFA / AutoAVSR inference
 
@@ -205,11 +205,11 @@ This script orchestrates:
 Use these when investigating jaw/tongue synchronization rather than raw VSR:
 
 ```bash
-uv run python tongue_scripts/jaw_tongue_sync_script/jaw_tongue_sync_analysis.py --dataset-id 1_wayne_0_75_75
-uv run python tongue_scripts/phoneme_lag_probe.py --dataset-id 1_wayne_0_75_75 --clip-idx 63
+uv run python tongue_scripts/timing/jaw_tongue_sync_analysis.py --dataset-id 1_wayne_0_75_75
+uv run python tongue_scripts/analysis/phoneme_lag_probe.py --dataset-id 1_wayne_0_75_75 --clip-idx 63
 uv run python tongue_scripts/ground_truth_tools/tongue_gt_editor.py --dataset-id 1_wayne_0_75_75
 uv run python tongue_scripts/ground_truth_tools/tongue_gt_compare.py --gt-json /abs/path/clip_tongue_gt.json
-uv run python tongue_scripts/jaw_tongue_sync_script/jaw_tongue_sync_render_shift.py --dataset-id 1_wayne_0_75_75 --shift-seconds 0.05
+uv run python tongue_scripts/timing/jaw_tongue_sync_render_shift.py --dataset-id 1_wayne_0_75_75 --shift-seconds 0.05
 ```
 
 ## File and directory conventions
@@ -256,7 +256,7 @@ That last point matters: `compute_wer.py` is tied to the directory layout produc
 ## Good starting points when modifying code
 
 - If the task is mesh deformation or render quality, start in `tongue_scripts/tongue_animation/generate_tongue_animation.py` and `tongue_scripts/render_dual_tongue_comparison.py`.
-- If the task is timing or lag analysis, start in `tongue_scripts/jaw_tongue_sync_script/`, `tongue_scripts/phoneme_lag_probe.py`, and `tongue_scripts/lip_aperture_textgrid_plot.py`.
+- If the task is timing or lag analysis, start in `tongue_scripts/timing/`, `tongue_scripts/analysis/phoneme_lag_probe.py`, and `tongue_scripts/analysis/lip_aperture_textgrid_plot.py`.
 - If the task is transcript quality or inference behavior, start in `ADFA_EVALUATION/Visual_Speech_Recognition_for_Multiple_Languages/infer_pipeline.py`.
 - If the task is scoring, read `tongue_scripts/evaluate_vsr_ver.py`, `ADFA_EVALUATION/compute_wer.py`, and `evaluation_script/ver.py` together.
 

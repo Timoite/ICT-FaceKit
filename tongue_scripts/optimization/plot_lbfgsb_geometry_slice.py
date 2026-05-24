@@ -14,23 +14,21 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Rectangle
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_DIR = Path(__file__).resolve().parent
-TONGUE_ANIMATION_DIR = SCRIPT_DIR / "tongue_animation"
+TONGUE_SCRIPTS_DIR = SCRIPT_DIR.parent
+PROJECT_ROOT = TONGUE_SCRIPTS_DIR.parent
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-if str(TONGUE_ANIMATION_DIR) not in sys.path:
-    sys.path.insert(0, str(TONGUE_ANIMATION_DIR))
 
-from face_model_io_trimesh import load_face_model_trimesh  # type: ignore
-from generate_tongue_animation import (  # type: ignore
+from tongue_scripts.tongue_animation.face_model_io_trimesh import load_face_model_trimesh  # type: ignore
+from tongue_scripts.tongue_animation.generate_tongue_animation import (  # type: ignore
     ANCHOR_INDICES,
     BONE_INDICES,
     TONGUE_SLICE,
     FaceKitTongueRig,
 )
-from tongue_scripts.phoneme_lbfgsb_optimizer import parse_textgrid
+from tongue_scripts.optimization.phoneme_lbfgsb_optimizer import parse_textgrid
 
 
 def parse_yz(value: str | None) -> np.ndarray | None:
@@ -134,7 +132,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--motion-path", default=None)
     parser.add_argument("--textgrid-path", default=None)
     parser.add_argument("--face-model-dir", default=str(PROJECT_ROOT / "FaceXModel"))
-    parser.add_argument("--std-path", default=str(SCRIPT_DIR / "normalising_vectors" / "JW13_4points_std.npy"))
+    parser.add_argument("--std-path", default=str(TONGUE_SCRIPTS_DIR / "normalising_vectors" / "JW13_4points_std.npy"))
     parser.add_argument("--scalar", type=float, default=0.20)
     parser.add_argument("--fps", type=float, default=50.0)
     parser.add_argument("--teeth-yz", default=None, help="Manual teeth target as 'z,y'")
@@ -152,7 +150,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output-path",
-        default=str(SCRIPT_DIR / "outputs" / "1_wayne_0_75_75_lbfgsb_geometry_slice.png"),
+        default=str(TONGUE_SCRIPTS_DIR / "outputs" / "1_wayne_0_75_75_lbfgsb_geometry_slice.png"),
     )
     return parser.parse_args()
 
@@ -161,7 +159,7 @@ def main() -> None:
     args = parse_args()
     beat_root = Path(args.beat_root)
     speaker_dir = beat_root / str(args.speaker_id)
-    motion_path = Path(args.motion_path) if args.motion_path else (SCRIPT_DIR / "outputs" / f"{args.dataset_id}.npy")
+    motion_path = Path(args.motion_path) if args.motion_path else (TONGUE_SCRIPTS_DIR / "outputs" / f"{args.dataset_id}.npy")
     textgrid_path = Path(args.textgrid_path) if args.textgrid_path else (speaker_dir / f"{args.dataset_id}.TextGrid")
     output_path = Path(args.output_path)
 

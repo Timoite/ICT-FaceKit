@@ -25,16 +25,14 @@ from typing import List
 
 import numpy as np
 
-SCRIPT_DIR = Path(__file__).parent.resolve()
-PROJECT_ROOT = SCRIPT_DIR.parent
-TONGUE_ANIMATION_DIR = SCRIPT_DIR / "tongue_animation"
+SCRIPT_DIR = Path(__file__).resolve().parent
+TONGUE_SCRIPTS_DIR = SCRIPT_DIR.parent
+PROJECT_ROOT = TONGUE_SCRIPTS_DIR.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-if str(TONGUE_ANIMATION_DIR) not in sys.path:
-    sys.path.insert(0, str(TONGUE_ANIMATION_DIR))
 
-from face_model_io_trimesh import load_face_model_trimesh
-from generate_tongue_animation import (
+from tongue_scripts.tongue_animation.face_model_io_trimesh import load_face_model_trimesh
+from tongue_scripts.tongue_animation.generate_tongue_animation import (
     process_beat_data,
     load_ema_motion,
     FaceKitTongueRig,
@@ -656,10 +654,10 @@ def _add_render_args(parser: argparse.ArgumentParser) -> None:
             / "1"
         ),
     )
-    parser.add_argument("--tongue-npy-dir", default=str(SCRIPT_DIR / "outputs"))
+    parser.add_argument("--tongue-npy-dir", default=str(TONGUE_SCRIPTS_DIR / "outputs"))
     parser.add_argument(
         "--std-path",
-        default=str(SCRIPT_DIR / "normalising_vectors" / "JW13_4points_std.npy"),
+        default=str(TONGUE_SCRIPTS_DIR / "normalising_vectors" / "JW13_4points_std.npy"),
     )
     parser.add_argument("--face-model-dir", default=str(PROJECT_ROOT / "FaceXModel"))
     parser.add_argument("--max-seconds", type=float, default=None)
@@ -682,7 +680,7 @@ def _run_default_pipeline() -> None:
     beat_root = _default_beat_root()
     audio_path = beat_root / f"{dataset_id}.wav"
     audio_duration = _get_video_duration(audio_path)
-    outputs_dir = SCRIPT_DIR / "outputs"
+    outputs_dir = TONGUE_SCRIPTS_DIR / "outputs"
 
     sag_path = outputs_dir / f"{dataset_id}_sagittal.mp4"
     oblique_path = outputs_dir / f"{dataset_id}_oblique.mp4"
@@ -695,7 +693,7 @@ def _run_default_pipeline() -> None:
             dataset_id=dataset_id,
             beat_root=str(beat_root),
             tongue_npy_dir=str(outputs_dir),
-            std_path=str(SCRIPT_DIR / "normalising_vectors" / "JW13_4points_std.npy"),
+            std_path=str(TONGUE_SCRIPTS_DIR / "normalising_vectors" / "JW13_4points_std.npy"),
             face_model_dir=str(PROJECT_ROOT / "FaceXModel"),
             output_video=str(sag_path),
             audio=str(audio_path),
@@ -708,7 +706,7 @@ def _run_default_pipeline() -> None:
             dataset_id=dataset_id,
             beat_root=str(beat_root),
             tongue_npy_dir=str(outputs_dir),
-            std_path=str(SCRIPT_DIR / "normalising_vectors" / "JW13_4points_std.npy"),
+            std_path=str(TONGUE_SCRIPTS_DIR / "normalising_vectors" / "JW13_4points_std.npy"),
             face_model_dir=str(PROJECT_ROOT / "FaceXModel"),
             output_video=str(oblique_path),
             max_seconds=audio_duration,
@@ -751,7 +749,7 @@ def main() -> None:
     _add_render_args(sag_parser)
     sag_parser.add_argument(
         "--output-video",
-        default=str(SCRIPT_DIR / "outputs" / "1_wayne_0_75_75_sagittal.mp4"),
+        default=str(TONGUE_SCRIPTS_DIR / "outputs" / "1_wayne_0_75_75_sagittal.mp4"),
     )
     sag_parser.add_argument(
         "--audio",
@@ -764,7 +762,7 @@ def main() -> None:
     _add_render_args(ob_parser)
     ob_parser.add_argument(
         "--output-video",
-        default=str(SCRIPT_DIR / "outputs" / "1_wayne_0_75_75_oblique.mp4"),
+        default=str(TONGUE_SCRIPTS_DIR / "outputs" / "1_wayne_0_75_75_oblique.mp4"),
     )
     ob_parser.set_defaults(func=render_oblique)
 
@@ -782,11 +780,11 @@ def main() -> None:
     )
     cut_parser.add_argument(
         "--input-video",
-        default=str(SCRIPT_DIR / "outputs" / "1_wayne_0_75_75_sagittal.mp4"),
+        default=str(TONGUE_SCRIPTS_DIR / "outputs" / "1_wayne_0_75_75_sagittal.mp4"),
     )
     cut_parser.add_argument(
         "--output-dir",
-        default=str(SCRIPT_DIR / "outputs" / "phoneme_comparision_videos"),
+        default=str(TONGUE_SCRIPTS_DIR / "outputs" / "phoneme_comparision_videos"),
     )
     cut_parser.add_argument("--speed", type=float, default=0.1, help="Playback speed")
     cut_parser.add_argument(

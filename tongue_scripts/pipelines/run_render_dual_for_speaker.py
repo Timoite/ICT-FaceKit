@@ -9,10 +9,11 @@ import sys
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+TONGUE_SCRIPTS_DIR = PROJECT_ROOT / "tongue_scripts"
 SCRIPT_PATH = Path(__file__).resolve()
 RENDER_DATASET_SCRIPT = SCRIPT_PATH.parent / "run_render_dual_for_dataset.py"
-INVERT_SCRIPT = SCRIPT_PATH.parent / "invert.py"
+INVERT_SCRIPT = TONGUE_SCRIPTS_DIR / "inversion" / "invert.py"
 
 
 def parse_args() -> argparse.Namespace:
@@ -27,12 +28,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--motion-dir",
-        default=str(PROJECT_ROOT / "tongue_scripts" / "outputs"),
+        default=str(TONGUE_SCRIPTS_DIR / "outputs"),
         help="Directory containing or receiving EMA .npy files",
     )
     parser.add_argument(
         "--output-dir",
-        default=str(PROJECT_ROOT / "tongue_scripts" / "outputs" / "speaker_1_wayne"),
+        default=str(TONGUE_SCRIPTS_DIR / "outputs" / "speaker_1_wayne"),
         help="Directory for rendered videos",
     )
     parser.add_argument(

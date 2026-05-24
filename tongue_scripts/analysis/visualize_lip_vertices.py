@@ -16,16 +16,14 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-SCRIPT_DIR = Path(__file__).parent.resolve()
-PROJECT_ROOT = SCRIPT_DIR.parent
-TONGUE_ANIMATION_DIR = SCRIPT_DIR / "tongue_animation"
+SCRIPT_DIR = Path(__file__).resolve().parent
+TONGUE_SCRIPTS_DIR = SCRIPT_DIR.parent
+PROJECT_ROOT = TONGUE_SCRIPTS_DIR.parent
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-if str(TONGUE_ANIMATION_DIR) not in sys.path:
-    sys.path.insert(0, str(TONGUE_ANIMATION_DIR))
 
-from face_model_io_trimesh import load_face_model_trimesh
+from tongue_scripts.tongue_animation.face_model_io_trimesh import load_face_model_trimesh
 
 
 def parse_args() -> argparse.Namespace:
@@ -57,7 +55,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output-path",
-        default=str(SCRIPT_DIR / "vis_output" / "lip_vertex_pair_check.png"),
+        default=str(TONGUE_SCRIPTS_DIR / "vis_output" / "lip_vertex_pair_check.png"),
         help="Output image path",
     )
     parser.add_argument(

@@ -18,23 +18,21 @@ from typing import Optional
 
 import numpy as np
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_DIR = Path(__file__).resolve().parent
-TONGUE_ANIMATION_DIR = SCRIPT_DIR / "tongue_animation"
+TONGUE_SCRIPTS_DIR = SCRIPT_DIR.parent
+PROJECT_ROOT = TONGUE_SCRIPTS_DIR.parent
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-if str(TONGUE_ANIMATION_DIR) not in sys.path:
-    sys.path.insert(0, str(TONGUE_ANIMATION_DIR))
 
-from face_model_io_trimesh import load_face_model_trimesh  # type: ignore
-from generate_tongue_animation import (  # type: ignore
+from tongue_scripts.tongue_animation.face_model_io_trimesh import load_face_model_trimesh  # type: ignore
+from tongue_scripts.tongue_animation.generate_tongue_animation import (  # type: ignore
     ANCHOR_INDICES,
     BONE_INDICES,
     TONGUE_SLICE,
     FaceKitTongueRig,
 )
-from tongue_scripts.phoneme_lbfgsb_optimizer import (
+from tongue_scripts.optimization.phoneme_lbfgsb_optimizer import (
     FaceKitRigForwardAdapter,
     MouthBox,
     OptimizationConfig,
@@ -326,7 +324,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--face-model-dir", default=str(PROJECT_ROOT / "FaceXModel"))
     parser.add_argument(
         "--std-path",
-        default=str(SCRIPT_DIR / "normalising_vectors" / "JW13_4points_std.npy"),
+        default=str(TONGUE_SCRIPTS_DIR / "normalising_vectors" / "JW13_4points_std.npy"),
     )
     parser.add_argument("--scalar", type=float, default=0.20)
     parser.add_argument("--fps", type=float, default=50.0)
@@ -404,9 +402,9 @@ def main() -> None:
     beat_root = Path(args.beat_root)
     speaker_dir = beat_root / str(args.speaker_id)
 
-    motion_path = Path(args.motion_path) if args.motion_path else (SCRIPT_DIR / "outputs" / f"{args.dataset_id}.npy")
+    motion_path = Path(args.motion_path) if args.motion_path else (TONGUE_SCRIPTS_DIR / "outputs" / f"{args.dataset_id}.npy")
     textgrid_path = Path(args.textgrid_path) if args.textgrid_path else (speaker_dir / f"{args.dataset_id}.TextGrid")
-    output_path = Path(args.output_path) if args.output_path else (SCRIPT_DIR / "outputs" / f"{args.dataset_id}_lbfgsb.npy")
+    output_path = Path(args.output_path) if args.output_path else (TONGUE_SCRIPTS_DIR / "outputs" / f"{args.dataset_id}_lbfgsb.npy")
     debug_json_path = (
         Path(args.debug_json_path)
         if args.debug_json_path
@@ -427,7 +425,7 @@ def main() -> None:
         if args.meta_json_path
         else output_path.with_name(output_path.stem + "_meta.json")
     )
-    default_target_json = SCRIPT_DIR / "outputs" / f"{args.dataset_id}_manual_tip_targets.json"
+    default_target_json = TONGUE_SCRIPTS_DIR / "outputs" / f"{args.dataset_id}_manual_tip_targets.json"
     target_points_json_path = (
         Path(args.target_points_json)
         if args.target_points_json

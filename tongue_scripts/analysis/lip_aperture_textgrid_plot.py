@@ -34,15 +34,13 @@ NORM_VECTOR_COLS = 14  # expected width for mu/std normalization vectors
 UPPER_LIP_VERTEX_IDX = 5533
 LOWER_LIP_VERTEX_IDX = 5517
 
-SCRIPT_DIR = Path(__file__).parent.resolve()
-PROJECT_ROOT = SCRIPT_DIR.parent
-TONGUE_ANIMATION_DIR = SCRIPT_DIR / "tongue_animation"
+SCRIPT_DIR = Path(__file__).resolve().parent
+TONGUE_SCRIPTS_DIR = SCRIPT_DIR.parent
+PROJECT_ROOT = TONGUE_SCRIPTS_DIR.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-if str(TONGUE_ANIMATION_DIR) not in sys.path:
-    sys.path.insert(0, str(TONGUE_ANIMATION_DIR))
 
-from face_model_io_trimesh import load_face_model_trimesh
+from tongue_scripts.tongue_animation.face_model_io_trimesh import load_face_model_trimesh
 
 
 @dataclass
@@ -72,7 +70,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--tongue-npy-dir",
-        default=str(SCRIPT_DIR / "outputs"),
+        default=str(TONGUE_SCRIPTS_DIR / "outputs"),
         help="Directory containing WavLM tongue+lips .npy files",
     )
     parser.add_argument(
@@ -82,12 +80,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--mu-path",
-        default=str(SCRIPT_DIR / "normalising_vectors" / "JW13_4points_mu.npy"),
+        default=str(TONGUE_SCRIPTS_DIR / "normalising_vectors" / "JW13_4points_mu.npy"),
         help="Path to normalization mean (.npy), used to denormalize articulatory coordinates",
     )
     parser.add_argument(
         "--std-path",
-        default=str(SCRIPT_DIR / "normalising_vectors" / "JW13_4points_std.npy"),
+        default=str(TONGUE_SCRIPTS_DIR / "normalising_vectors" / "JW13_4points_std.npy"),
         help="Path to normalization std (.npy), used to denormalize articulatory coordinates",
     )
     parser.add_argument("--phone-tier", default="phones", help="TextGrid tier to read")
@@ -363,7 +361,7 @@ def main() -> None:
     if args.output_path:
         output_path = Path(args.output_path)
     else:
-        output_path = SCRIPT_DIR / "vis_output" / f"{dataset_id}_lip_aperture_textgrid.png"
+        output_path = TONGUE_SCRIPTS_DIR / "vis_output" / f"{dataset_id}_lip_aperture_textgrid.png"
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Waveform

@@ -21,16 +21,14 @@ from pathlib import Path
 from scipy.interpolate import interp1d
 
 # Setup paths
-SCRIPT_DIR = Path(__file__).parent.absolute()
-PROJECT_ROOT = SCRIPT_DIR.parent
+SCRIPT_DIR = Path(__file__).resolve().parent
 TONGUE_SCRIPTS_DIR = SCRIPT_DIR.parent
+PROJECT_ROOT = TONGUE_SCRIPTS_DIR.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-if str(TONGUE_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(TONGUE_SCRIPTS_DIR))
 
-from face_model_io_trimesh import load_face_model_trimesh
-from generate_tongue_animation import (
+from tongue_scripts.tongue_animation.face_model_io_trimesh import load_face_model_trimesh
+from tongue_scripts.tongue_animation.generate_tongue_animation import (
     process_beat_data,
     load_ema_motion,
     FaceKitTongueRig,
@@ -39,10 +37,10 @@ from generate_tongue_animation import (
 
 # Paths
 FACE_MODEL_DIR = str(PROJECT_ROOT / "FaceXModel")
-MOTION_PATH = str(SCRIPT_DIR / "outputs" / "1_wayne_0_75_75.npy")
-BS_JSON_PATH = str(SCRIPT_DIR / "inputs" / "1_wayne_0_75_75.json")
-STD_PATH = str(SCRIPT_DIR / "normalising_vectors" / "JW13_4points_std.npy")
-OUTPUT_DIR = SCRIPT_DIR / "vis_output"
+MOTION_PATH = str(TONGUE_SCRIPTS_DIR / "outputs" / "1_wayne_0_75_75.npy")
+BS_JSON_PATH = str(TONGUE_SCRIPTS_DIR / "inputs" / "1_wayne_0_75_75.json")
+STD_PATH = str(TONGUE_SCRIPTS_DIR / "normalising_vectors" / "JW13_4points_std.npy")
+OUTPUT_DIR = TONGUE_SCRIPTS_DIR / "vis_output"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 # Config

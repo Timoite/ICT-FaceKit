@@ -16,13 +16,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_DIR = Path(__file__).resolve().parent
+TONGUE_SCRIPTS_DIR = SCRIPT_DIR.parent
+PROJECT_ROOT = TONGUE_SCRIPTS_DIR.parent
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from tongue_scripts import evaluate_vsr_ver as ev
+from tongue_scripts.evaluation import evaluate_vsr_ver as ev
 
 
 @dataclass(frozen=True)
@@ -114,7 +115,7 @@ def render_dynamic_video(
     output_dir.mkdir(parents=True, exist_ok=True)
     cmd = [
         python_bin,
-        str(SCRIPT_DIR / "run_render_dual_for_dataset.py"),
+        str(TONGUE_SCRIPTS_DIR / "pipelines" / "run_render_dual_for_dataset.py"),
         "--dataset-id",
         dataset_id,
         "--speaker-id",
@@ -128,7 +129,7 @@ def render_dynamic_video(
         "--tongue-shift-seconds",
         str(tongue_shift_seconds),
     ]
-    run_cmd(cmd, cwd=SCRIPT_DIR)
+    run_cmd(cmd, cwd=TONGUE_SCRIPTS_DIR)
     dynamic_with_audio = output_dir / f"{dataset_id}_with_tongue_with_audio.mp4"
     if not dynamic_with_audio.is_file():
         raise RuntimeError(f"Rendered dynamic video not found: {dynamic_with_audio}")
@@ -302,7 +303,7 @@ def run_optimizer_candidate(
         "--contact-window-fraction",
         str(candidate.contact_window_fraction),
     ]
-    run_cmd(cmd, cwd=SCRIPT_DIR)
+    run_cmd(cmd, cwd=TONGUE_SCRIPTS_DIR)
     if not output_motion_path.is_file():
         raise RuntimeError(f"Optimizer output missing: {output_motion_path}")
     return output_motion_path
@@ -321,7 +322,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--motion-path", default=None)
     parser.add_argument("--textgrid-path", default=None)
     parser.add_argument("--ground-truth-path", default=None)
-    parser.add_argument("--run-root", default=str(SCRIPT_DIR / "outputs" / "lbfgsb_runs"))
+    parser.add_argument("--run-root", default=str(TONGUE_SCRIPTS_DIR / "outputs" / "lbfgsb_runs"))
     parser.add_argument("--run-name", default=None)
     parser.add_argument("--python-bin", default=sys.executable)
 
@@ -350,7 +351,7 @@ def main() -> None:
     args = parse_args()
     beat_root = Path(args.beat_root)
     speaker_dir = beat_root / str(args.speaker_id)
-    motion_path = Path(args.motion_path) if args.motion_path else (SCRIPT_DIR / "outputs" / f"{args.dataset_id}.npy")
+    motion_path = Path(args.motion_path) if args.motion_path else (TONGUE_SCRIPTS_DIR / "outputs" / f"{args.dataset_id}.npy")
     textgrid_path = Path(args.textgrid_path) if args.textgrid_path else (speaker_dir / f"{args.dataset_id}.TextGrid")
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")

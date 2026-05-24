@@ -50,7 +50,7 @@ from generate_tongue_animation import (  # type: ignore
     FaceKitTongueRig,
     process_beat_data,
 )
-from tongue_scripts.phoneme_lbfgsb_optimizer import parse_textgrid
+from tongue_scripts.optimization.phoneme_lbfgsb_optimizer import parse_textgrid
 
 MOUTH_REGION = slice(14062, 17039)
 

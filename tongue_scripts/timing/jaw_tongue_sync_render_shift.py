@@ -11,8 +11,9 @@ from pathlib import Path
 
 import numpy as np
 
-SCRIPT_DIR = Path(__file__).parent.resolve()
-PROJECT_ROOT = SCRIPT_DIR.parent.parent
+SCRIPT_DIR = Path(__file__).resolve().parent
+TONGUE_SCRIPTS_DIR = SCRIPT_DIR.parent
+PROJECT_ROOT = TONGUE_SCRIPTS_DIR.parent
 
 
 def parse_args() -> argparse.Namespace:
@@ -20,12 +21,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset-id", default="1_wayne_0_10_10", help="BEAT clip id")
     parser.add_argument(
         "--tongue-npy-dir",
-        default=str(PROJECT_ROOT / "tongue_scripts" / "outputs"),
+        default=str(TONGUE_SCRIPTS_DIR / "outputs"),
         help="Directory containing WavLM tongue .npy files",
     )
     parser.add_argument(
         "--output-npy-dir",
-        default=str(PROJECT_ROOT / "tongue_scripts" / "outputs_shifted"),
+        default=str(TONGUE_SCRIPTS_DIR / "outputs_shifted"),
         help="Directory to write shifted .npy files",
     )
     parser.add_argument("--tongue-fps", type=float, default=50.0, help="FPS of WavLM tongue output")

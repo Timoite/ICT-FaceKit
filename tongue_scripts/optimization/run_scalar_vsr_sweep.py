@@ -25,13 +25,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_DIR = Path(__file__).resolve().parent
+TONGUE_SCRIPTS_DIR = SCRIPT_DIR.parent
+PROJECT_ROOT = TONGUE_SCRIPTS_DIR.parent
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from tongue_scripts import evaluate_vsr_ver as ev
+from tongue_scripts.evaluation import evaluate_vsr_ver as ev
 
 
 @dataclass
@@ -127,7 +128,7 @@ def render_fullface_video(
     output_dir.mkdir(parents=True, exist_ok=True)
     cmd = [
         python_bin,
-        str(SCRIPT_DIR / "render_fullface_shift_compare.py"),
+        str(TONGUE_SCRIPTS_DIR / "rendering" / "render_fullface_shift_compare.py"),
         "--dataset-id",
         dataset_id,
         "--speaker-id",
@@ -151,7 +152,7 @@ def render_fullface_video(
         cmd.append("--skip-existing")
     else:
         cmd.append("--no-skip-existing")
-    run_cmd(cmd, cwd=SCRIPT_DIR)
+    run_cmd(cmd, cwd=TONGUE_SCRIPTS_DIR)
 
     video = output_dir / dataset_id / f"{dataset_id}_FULL_FACE_{shift_tag(render_shift_seconds)}_with_audio.mp4"
     if not video.is_file():
@@ -275,7 +276,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--motion-path",
-        default=str(SCRIPT_DIR / "outputs" / "1_wayne_0_75_75_pre_shift012.npy"),
+        default=str(TONGUE_SCRIPTS_DIR / "outputs" / "1_wayne_0_75_75_pre_shift012.npy"),
         help=(
             "Input motion .npy. Use an already globally aligned file here if you have one; "
             "the default is a pre-shifted example to avoid mixing scalar sweep with extra timing changes."
@@ -283,7 +284,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--textgrid-path", default=None)
     parser.add_argument("--ground-truth-path", default=None)
-    parser.add_argument("--run-root", default=str(SCRIPT_DIR / "outputs" / "scalar_vsr_runs"))
+    parser.add_argument("--run-root", default=str(TONGUE_SCRIPTS_DIR / "outputs" / "scalar_vsr_runs"))
     parser.add_argument("--run-name", default=None)
     parser.add_argument("--python-bin", default=sys.executable)
 

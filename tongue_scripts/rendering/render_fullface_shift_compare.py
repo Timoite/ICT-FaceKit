@@ -19,17 +19,15 @@ from scipy.interpolate import interp1d
 
 os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_DIR = Path(__file__).resolve().parent
-TONGUE_ANIM_DIR = SCRIPT_DIR / "tongue_animation"
+TONGUE_SCRIPTS_DIR = SCRIPT_DIR.parent
+PROJECT_ROOT = TONGUE_SCRIPTS_DIR.parent
+TONGUE_ANIM_DIR = TONGUE_SCRIPTS_DIR / "tongue_animation"
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-if str(TONGUE_ANIM_DIR) not in sys.path:
-    sys.path.insert(0, str(TONGUE_ANIM_DIR))
-
-from face_model_io_trimesh import load_face_model_trimesh  # type: ignore
-import generate_tongue_animation as gta  # type: ignore
+from tongue_scripts.tongue_animation.face_model_io_trimesh import load_face_model_trimesh  # type: ignore
+from tongue_scripts.tongue_animation import generate_tongue_animation as gta  # type: ignore
 import cv2
 import pyrender
 import trimesh
@@ -45,12 +43,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--motion-path",
-        default=str(SCRIPT_DIR / "outputs" / "1_wayne_0_75_75.npy"),
+        default=str(TONGUE_SCRIPTS_DIR / "outputs" / "1_wayne_0_75_75.npy"),
     )
     parser.add_argument("--face-model-dir", default=str(PROJECT_ROOT / "FaceXModel"))
     parser.add_argument(
         "--std-path",
-        default=str(SCRIPT_DIR / "normalising_vectors" / "JW13_4points_std.npy"),
+        default=str(TONGUE_SCRIPTS_DIR / "normalising_vectors" / "JW13_4points_std.npy"),
     )
     parser.add_argument("--fps", type=int, default=25)
     parser.add_argument("--max-seconds", type=float, default=None)
@@ -66,7 +64,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output-dir",
-        default=str(SCRIPT_DIR / "outputs" / "fullface_shift_compare"),
+        default=str(TONGUE_SCRIPTS_DIR / "outputs" / "fullface_shift_compare"),
     )
     parser.add_argument("--include-passive", action="store_true", default=False)
     parser.add_argument("--skip-existing", action="store_true", default=True)

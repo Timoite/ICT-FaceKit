@@ -22,7 +22,7 @@ from typing import Any
 import numpy as np
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _append_project_root() -> None:
@@ -35,7 +35,7 @@ def _append_project_root() -> None:
 
 _append_project_root()
 
-from tongue_scripts.phoneme_lbfgsb_optimizer import (  # noqa: E402
+from tongue_scripts.optimization.phoneme_lbfgsb_optimizer import (  # noqa: E402
     build_knots_from_traj,
     interpolate_knots,
     parse_textgrid,

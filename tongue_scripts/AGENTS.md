@@ -22,6 +22,30 @@ The current practical goal is usually:
 
 ## Current scripts that matter
 
+### Canonical folder layout
+
+The canonical implementations now live in grouped subfolders:
+
+- `inversion/`: audio -> articulatory motion and WavLM model code
+- `rendering/`: active/passive tongue renderers and full-face render variants
+- `analysis/`: lip aperture, phoneme lag, and geometry inspection tools
+- `optimization/`: L-BFGS-B experiments, scalar sweeps, and optimizer helpers
+- `pipelines/`: end-to-end dataset, speaker, and real-video workflows
+- `timing/`: jaw/tongue synchronization analysis utilities
+- `preview/`: standalone preview and visualization helpers
+
+A small set of top-level scripts remain on purpose as convenient front-door entry points:
+
+- `invert.py`
+- `wavlm_lora.py`
+- `render_dual_tongue_comparison.py`
+- `run_render_dual_for_dataset.py`
+- `multi_speaker_short_pipeline.py`
+- `evaluate_vsr_ver.py`
+- `render_fullface_matplotlib_combo.py`
+
+Most other scripts should be used from their grouped folders directly.
+
 ### Core generation and rendering
 
 - `invert.py`: audio -> articulatory `.npy`
@@ -32,10 +56,10 @@ The current practical goal is usually:
 
 ### Analysis and optimization
 
-- `jaw_tongue_sync_script/jaw_tongue_sync_analysis.py`: global jaw/tongue timing correlation
-- `phoneme_lag_probe.py`: lag probing around a specific phoneme clip
-- `lip_aperture_textgrid_plot.py`: compare articulatory lip aperture to BEAT lip aperture
-- `articulation_npy_optimizer.py`: phoneme-profile over-articulation of the `.npy`
+- `timing/jaw_tongue_sync_analysis.py`: global jaw/tongue timing correlation
+- `analysis/phoneme_lag_probe.py`: lag probing around a specific phoneme clip
+- `analysis/lip_aperture_textgrid_plot.py`: compare articulatory lip aperture to BEAT lip aperture
+- `optimization/articulation_npy_optimizer.py`: phoneme-profile over-articulation of the `.npy`
 
 ### Ground-truth tools
 
@@ -45,12 +69,12 @@ The current practical goal is usually:
 ### Evaluation wrappers
 
 - `evaluate_vsr_ver.py`: run VSR and compare VER / WER across videos
-- `generate_vsr_composite_report.py`: alias for `evaluate_vsr_ver.py`
 - `multi_speaker_short_pipeline.py`: orchestrates download -> invert -> lag estimate -> render -> evaluate
 
 ## Files that are not the main path
 
-- `tongue_animation.py` is a standalone separated-tongue preview script, not the production render/eval path.
+- `preview/tongue_animation.py` is a standalone separated-tongue preview script, not the production render/eval path.
+- The old Wayne-only VER/WER runner has been removed; use `evaluate_vsr_ver.py` or `multi_speaker_short_pipeline.py` instead.
 - Older references to `batch_render_corrected.py` or `test_tongue_grid_search_25fps.py` are stale in this checkout.
 
 ## Core mental model
@@ -112,8 +136,8 @@ uv run python tongue_scripts/run_render_dual_for_dataset.py \
 ### Timing analysis
 
 ```bash
-uv run python tongue_scripts/jaw_tongue_sync_script/jaw_tongue_sync_analysis.py --dataset-id 1_wayne_0_75_75
-uv run python tongue_scripts/phoneme_lag_probe.py --dataset-id 1_wayne_0_75_75 --clip-idx 63
+uv run python tongue_scripts/timing/jaw_tongue_sync_analysis.py --dataset-id 1_wayne_0_75_75
+uv run python tongue_scripts/analysis/phoneme_lag_probe.py --dataset-id 1_wayne_0_75_75 --clip-idx 63
 ```
 
 ### Manual GT workflow
@@ -136,7 +160,7 @@ uv run python tongue_scripts/multi_speaker_short_pipeline.py \
 
 - Keep the active/passive comparison renderer at 25 fps for VSR work.
 - Keep `jawOpen` minimum-offset correction enabled unless the experiment explicitly studies the uncorrected baseline.
-- `render_dual_tongue_comparison.py` is the current script that already bakes in both of those assumptions.
+- `render_dual_tongue_comparison.py` is the current top-level convenience entry point for the grouped renderer and already bakes in both of those assumptions.
 - `ffmpeg` is required for audio muxing and the VSR prep flow.
 
 ## Data paths you will touch most often
@@ -150,7 +174,7 @@ uv run python tongue_scripts/multi_speaker_short_pipeline.py \
 ## Common pitfalls
 
 - Do not assume old script names from earlier notes still exist.
-- Do not treat `tongue_animation.py` as the main renderer.
+- Do not treat `preview/tongue_animation.py` as the main renderer.
 - Do not forget that `infer.py` in ADFA uses Hydra `key=value`, while `infer_pipeline.py` uses normal `--flags`.
 - Do not change mesh loading in a way that reorders vertices.
 - Do not forget that positive shift delays the tongue.
