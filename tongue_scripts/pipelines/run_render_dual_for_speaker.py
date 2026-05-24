@@ -8,12 +8,18 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 TONGUE_SCRIPTS_DIR = PROJECT_ROOT / "tongue_scripts"
 SCRIPT_PATH = Path(__file__).resolve()
 RENDER_DATASET_SCRIPT = SCRIPT_PATH.parent / "run_render_dual_for_dataset.py"
 INVERT_SCRIPT = TONGUE_SCRIPTS_DIR / "inversion" / "invert.py"
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from tongue_scripts.pipelines.run_render_dual_for_dataset import (
+    tongue_motion_output_dir,
+    video_output_dir,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -23,18 +29,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--speaker-id", default="1", help="BEAT speaker id")
     parser.add_argument(
         "--beat-root",
-        default=str(PROJECT_ROOT / "data" / "beat_cache" / "beat_english_v0.2.1" / "beat_english_v0.2.1"),
+        default=str(
+            PROJECT_ROOT
+            / "data"
+            / "beat_cache"
+            / "beat_english_v0.2.1"
+            / "beat_english_v0.2.1"
+        ),
         help="Root containing per-speaker BEAT folders",
     )
     parser.add_argument(
         "--motion-dir",
         default=str(TONGUE_SCRIPTS_DIR / "outputs"),
-        help="Directory containing or receiving EMA .npy files",
+        help="Base output directory containing or receiving <speaker>/<instance>/tongue_motion .npy files",
     )
     parser.add_argument(
         "--output-dir",
-        default=str(TONGUE_SCRIPTS_DIR / "outputs" / "speaker_1_wayne"),
-        help="Directory for rendered videos",
+        default=str(TONGUE_SCRIPTS_DIR / "outputs"),
+        help="Base output directory for rendered videos under <speaker>/<instance>/videos",
     )
     parser.add_argument(
         "--tongue-shift-seconds",
@@ -46,6 +58,11 @@ def parse_args() -> argparse.Namespace:
         "--generate-missing-motion",
         action="store_true",
         help="Run invert.py when a dataset has a wav file but no .npy yet",
+    )
+    parser.add_argument(
+        "--use-gpu",
+        action="store_true",
+        help="Use pyrender's EGL/OpenGL GPU backend for the rendering stage.",
     )
     parser.add_argument(
         "--skip-existing",
@@ -106,11 +123,21 @@ def main() -> None:
 
     for dataset_id in dataset_ids:
         wav_path = speaker_root / f"{dataset_id}.wav"
-        motion_path = motion_dir / f"{dataset_id}.npy"
-        active_with_audio = output_dir / f"{dataset_id}_with_tongue_with_audio.mp4"
-        passive_with_audio = output_dir / f"{dataset_id}_passive_tongue_with_audio.mp4"
+        clip_motion_dir = tongue_motion_output_dir(
+            motion_dir, str(args.speaker_id), dataset_id
+        )
+        clip_video_dir = video_output_dir(output_dir, str(args.speaker_id), dataset_id)
+        motion_path = clip_motion_dir / f"{dataset_id}.npy"
+        active_with_audio = clip_video_dir / f"{dataset_id}_with_tongue_with_audio.mp4"
+        passive_with_audio = (
+            clip_video_dir / f"{dataset_id}_passive_tongue_with_audio.mp4"
+        )
 
-        if args.skip_existing and active_with_audio.exists() and passive_with_audio.exists():
+        if (
+            args.skip_existing
+            and active_with_audio.exists()
+            and passive_with_audio.exists()
+        ):
             print(f"[SKIP existing] {dataset_id}")
             skipped_existing += 1
             continue
@@ -127,6 +154,7 @@ def main() -> None:
                 continue
 
             try:
+                clip_motion_dir.mkdir(parents=True, exist_ok=True)
                 run(
                     [
                         sys.executable,
@@ -143,25 +171,26 @@ def main() -> None:
                 continue
 
         try:
-            run(
-                [
-                    sys.executable,
-                    str(RENDER_DATASET_SCRIPT),
-                    "--dataset-id",
-                    dataset_id,
-                    "--speaker-id",
-                    str(args.speaker_id),
-                    "--beat-root",
-                    str(beat_root),
-                    "--motion-path",
-                    str(motion_path),
-                    "--output-dir",
-                    str(output_dir),
-                    "--tongue-shift-seconds",
-                    str(args.tongue_shift_seconds),
-                ],
-                cwd=SCRIPT_PATH.parent,
-            )
+            render_cmd = [
+                sys.executable,
+                str(RENDER_DATASET_SCRIPT),
+                "--dataset-id",
+                dataset_id,
+                "--speaker-id",
+                str(args.speaker_id),
+                "--beat-root",
+                str(beat_root),
+                "--motion-path",
+                str(motion_path),
+                "--output-dir",
+                str(output_dir),
+                "--tongue-shift-seconds",
+                str(args.tongue_shift_seconds),
+            ]
+            if args.use_gpu:
+                render_cmd.append("--use-gpu")
+
+            run(render_cmd, cwd=SCRIPT_PATH.parent)
             rendered += 1
         except subprocess.CalledProcessError:
             failed.append(dataset_id)

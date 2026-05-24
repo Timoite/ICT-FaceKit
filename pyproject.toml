@@ -35,6 +35,7 @@ dependencies = [
     "editdistance>=0.8",
     "torch-complex>=0.4",
     "pandas>=2.2",
+    "datasets>=2.19",
 ]
 
 [project.optional-dependencies]

@@ -20,6 +20,7 @@ Both videos apply jawOpen offset correction for proper lip closure.
 from __future__ import annotations
 
 import argparse
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -35,12 +36,14 @@ PROJECT_ROOT = TONGUE_SCRIPTS_DIR.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from tongue_scripts.tongue_animation.face_model_io_trimesh import load_face_model_trimesh
+from tongue_scripts.tongue_animation.face_model_io_trimesh import (
+    load_face_model_trimesh,
+)
 from tongue_scripts.tongue_animation.generate_tongue_animation import (
+    TONGUE_CONFIG,
+    FaceKitTongueRig,
     load_blendshape_json_sequence,
     load_ema_motion,
-    FaceKitTongueRig,
-    TONGUE_CONFIG,
 )
 
 # ==========================================
@@ -58,9 +61,25 @@ FACE_MODEL_DIR = str(PROJECT_ROOT / "FaceXModel")
 # Try multiple possible BEAT data paths
 BEAT_DATA_ROOTS = [
     TONGUE_SCRIPTS_DIR / "inputs",
-    PROJECT_ROOT / "data" / "beat_cache" / "beat_english_v0.2.1" / "beat_english_v0.2.1" / "1",
-    PROJECT_ROOT / "ADFA_EVALUATION" / "data" / "beat_cache_speaker1" / "beat_english_v0.2.1" / "beat_english_v0.2.1" / "1",
-    PROJECT_ROOT / "ADFA_EVALUATION" / "Visual_Speech_Recognition_for_Multiple_Languages" / "data" / "beat_english_v0.2.1" / "1",
+    PROJECT_ROOT
+    / "data"
+    / "beat_cache"
+    / "beat_english_v0.2.1"
+    / "beat_english_v0.2.1"
+    / "1",
+    PROJECT_ROOT
+    / "ADFA_EVALUATION"
+    / "data"
+    / "beat_cache_speaker1"
+    / "beat_english_v0.2.1"
+    / "beat_english_v0.2.1"
+    / "1",
+    PROJECT_ROOT
+    / "ADFA_EVALUATION"
+    / "Visual_Speech_Recognition_for_Multiple_Languages"
+    / "data"
+    / "beat_english_v0.2.1"
+    / "1",
 ]
 
 # Find the first valid path
@@ -101,6 +120,7 @@ TONGUE_SLICE = slice(16611, 17039)
 ANCHOR_INDICES = [16661, 16696, 16755, 16758]
 BONE_INDICES = [16661, 16757]
 
+
 # ==========================================
 # JAWOPEN OFFSET CORRECTION
 # ==========================================
@@ -125,11 +145,16 @@ def apply_jawopen_offset_correction(face_seq, face_model):
         min_val = float(np.min(raw_vals))
         if min_val != 0.0:
             print(f"  ★ JawOpen offset detected: min_value={min_val:.4f}")
-            print(f"  ★ Applying correction: shifting by {-min_val:.4f} to ensure full closure")
+            print(
+                f"  ★ Applying correction: shifting by {-min_val:.4f} to ensure full closure"
+            )
         face_seq[:, jaw_idx] = np.maximum(0.0, raw_vals - min_val)
     else:
-        print("  [Warning] 'jawOpen' not found in expression names. Skipping lip correction.")
+        print(
+            "  [Warning] 'jawOpen' not found in expression names. Skipping lip correction."
+        )
     return face_seq
+
 
 def shift_sequence(seq: np.ndarray, shift_frames: int) -> np.ndarray:
     """
@@ -148,6 +173,7 @@ def shift_sequence(seq: np.ndarray, shift_frames: int) -> np.ndarray:
         pad = np.repeat(seq[-1:], shift_frames, axis=0)
         shifted = np.concatenate([seq[shift_frames:], pad], axis=0)
     return shifted
+
 
 # ==========================================
 # DATA LOADING
@@ -171,11 +197,11 @@ def load_data():
         )
 
     # Apply jawOpen offset correction
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("JAWOPEN OFFSET CORRECTION")
-    print("="*60)
+    print("=" * 60)
     face_seq = apply_jawopen_offset_correction(face_seq, face_model)
-    print("="*60 + "\n")
+    print("=" * 60 + "\n")
 
     print("Setting up tongue rig...")
     tongue_rig = FaceKitTongueRig(
@@ -201,6 +227,7 @@ def load_data():
     # Resample from 50fps to 25fps if needed
     if len(ema_seq) > len(face_seq):
         from scipy.interpolate import interp1d
+
         n_frames = len(face_seq)
         duration = len(ema_seq) / 50.0
         x_source = np.linspace(0, duration, len(ema_seq))
@@ -208,28 +235,41 @@ def load_data():
         ema_flat = ema_seq.reshape(len(ema_seq), -1)
         ema_resampled = np.zeros((n_frames, ema_flat.shape[1]))
         for i in range(ema_flat.shape[1]):
-            ema_resampled[:, i] = interp1d(x_source, ema_flat[:, i], kind='cubic')(x_target)
+            ema_resampled[:, i] = interp1d(x_source, ema_flat[:, i], kind="cubic")(
+                x_target
+            )
         ema_seq = ema_resampled.reshape(n_frames, 4, 3)
 
     # Apply tongue shift delay (120ms)
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TONGUE SHIFT DELAY")
-    print("="*60)
+    print("=" * 60)
     if TONGUE_SHIFT_SECONDS != 0.0:
         shift_frames = int(round(TONGUE_SHIFT_SECONDS * FPS))
-        print(f"  ★ Applying {TONGUE_SHIFT_SECONDS}s delay ({shift_frames} frames @ {FPS}fps)")
+        print(
+            f"  ★ Applying {TONGUE_SHIFT_SECONDS}s delay ({shift_frames} frames @ {FPS}fps)"
+        )
         print(f"  ★ This delays tongue motion relative to jaw/expression motion")
         ema_seq = shift_sequence(ema_seq, shift_frames)
     else:
         print("  No tongue shift applied (TONGUE_SHIFT_SECONDS = 0.0)")
-    print("="*60 + "\n")
+    print("=" * 60 + "\n")
 
     return face_model, face_seq, tongue_rig, ema_seq
+
 
 # ==========================================
 # RENDERING
 # ==========================================
-def render_video_with_dynamic_tongue(face_model, face_seq, tongue_rig, ema_seq, output_path, fps=FPS, max_seconds=MAX_SECONDS):
+def render_video_with_dynamic_tongue(
+    face_model,
+    face_seq,
+    tongue_rig,
+    ema_seq,
+    output_path,
+    fps=FPS,
+    max_seconds=MAX_SECONDS,
+):
     """Render video with dynamic tongue driven by EMA motion."""
     print(f"Rendering video with DYNAMIC tongue to {output_path}...")
 
@@ -304,7 +344,9 @@ def render_video_with_dynamic_tongue(face_model, face_seq, tongue_rig, ema_seq, 
             print(f"  Frame {i}/{frames}...")
 
         # Deform face
-        weights = {name: val for name, val in zip(face_model.expression_names, face_seq[i])}
+        weights = {
+            name: val for name, val in zip(face_model.expression_names, face_seq[i])
+        }
         verts = face_model.deform(weights).copy()
 
         # Apply dynamic tongue deformation
@@ -329,7 +371,9 @@ def render_video_with_dynamic_tongue(face_model, face_seq, tongue_rig, ema_seq, 
 
         if len(faces_skin) > 0:
             tm_skin = trimesh.Trimesh(verts, faces_skin, process=False)
-            mesh_skin = pyrender.Mesh.from_trimesh(tm_skin, material=mat_skin, smooth=True)
+            mesh_skin = pyrender.Mesh.from_trimesh(
+                tm_skin, material=mat_skin, smooth=True
+            )
             if mesh_skin.primitives:
                 for p in mesh_skin.primitives:
                     p.material.doubleSided = True
@@ -337,7 +381,9 @@ def render_video_with_dynamic_tongue(face_model, face_seq, tongue_rig, ema_seq, 
 
         if len(faces_tongue) > 0:
             tm_tongue = trimesh.Trimesh(verts, faces_tongue, process=False)
-            mesh_tongue = pyrender.Mesh.from_trimesh(tm_tongue, material=mat_tongue, smooth=True)
+            mesh_tongue = pyrender.Mesh.from_trimesh(
+                tm_tongue, material=mat_tongue, smooth=True
+            )
             if mesh_tongue.primitives:
                 for p in mesh_tongue.primitives:
                     p.material.doubleSided = True
@@ -345,7 +391,9 @@ def render_video_with_dynamic_tongue(face_model, face_seq, tongue_rig, ema_seq, 
 
         if len(faces_gum) > 0:
             tm_gum = trimesh.Trimesh(verts, faces_gum, process=False)
-            mesh_gum = pyrender.Mesh.from_trimesh(tm_gum, material=mat_gums, smooth=True)
+            mesh_gum = pyrender.Mesh.from_trimesh(
+                tm_gum, material=mat_gums, smooth=True
+            )
             if mesh_gum.primitives:
                 for p in mesh_gum.primitives:
                     p.material.doubleSided = True
@@ -361,7 +409,10 @@ def render_video_with_dynamic_tongue(face_model, face_seq, tongue_rig, ema_seq, 
     renderer.delete()
     print(f"  ✓ Saved: {output_path}")
 
-def render_video_with_passive_tongue(face_model, face_seq, tongue_rig, output_path, fps=FPS, max_seconds=MAX_SECONDS):
+
+def render_video_with_passive_tongue(
+    face_model, face_seq, tongue_rig, output_path, fps=FPS, max_seconds=MAX_SECONDS
+):
     """Render video with passive tongue from generic_neutral_mesh."""
     print(f"Rendering video with PASSIVE tongue to {output_path}...")
 
@@ -436,7 +487,9 @@ def render_video_with_passive_tongue(face_model, face_seq, tongue_rig, output_pa
             print(f"  Frame {i}/{frames}...")
 
         # Deform face (NO dynamic tongue deformation)
-        weights = {name: val for name, val in zip(face_model.expression_names, face_seq[i])}
+        weights = {
+            name: val for name, val in zip(face_model.expression_names, face_seq[i])
+        }
         verts = face_model.deform(weights).copy()
 
         # NOTE: We do NOT apply tongue_rig.deform() here
@@ -460,7 +513,9 @@ def render_video_with_passive_tongue(face_model, face_seq, tongue_rig, output_pa
 
         if len(faces_skin) > 0:
             tm_skin = trimesh.Trimesh(verts, faces_skin, process=False)
-            mesh_skin = pyrender.Mesh.from_trimesh(tm_skin, material=mat_skin, smooth=True)
+            mesh_skin = pyrender.Mesh.from_trimesh(
+                tm_skin, material=mat_skin, smooth=True
+            )
             if mesh_skin.primitives:
                 for p in mesh_skin.primitives:
                     p.material.doubleSided = True
@@ -468,7 +523,9 @@ def render_video_with_passive_tongue(face_model, face_seq, tongue_rig, output_pa
 
         if len(faces_tongue) > 0:
             tm_tongue = trimesh.Trimesh(verts, faces_tongue, process=False)
-            mesh_tongue = pyrender.Mesh.from_trimesh(tm_tongue, material=mat_tongue, smooth=True)
+            mesh_tongue = pyrender.Mesh.from_trimesh(
+                tm_tongue, material=mat_tongue, smooth=True
+            )
             if mesh_tongue.primitives:
                 for p in mesh_tongue.primitives:
                     p.material.doubleSided = True
@@ -476,7 +533,9 @@ def render_video_with_passive_tongue(face_model, face_seq, tongue_rig, output_pa
 
         if len(faces_gum) > 0:
             tm_gum = trimesh.Trimesh(verts, faces_gum, process=False)
-            mesh_gum = pyrender.Mesh.from_trimesh(tm_gum, material=mat_gums, smooth=True)
+            mesh_gum = pyrender.Mesh.from_trimesh(
+                tm_gum, material=mat_gums, smooth=True
+            )
             if mesh_gum.primitives:
                 for p in mesh_gum.primitives:
                     p.material.doubleSided = True
@@ -492,10 +551,14 @@ def render_video_with_passive_tongue(face_model, face_seq, tongue_rig, output_pa
     renderer.delete()
     print(f"  ✓ Saved: {output_path}")
 
+
 def merge_audio(video_path, audio_path, output_path):
     """Merge audio into video using ffmpeg."""
     if not Path(audio_path).exists():
         print(f"  [Warning] Audio not found: {audio_path}")
+        return
+    if shutil.which("ffmpeg") is None:
+        print("  [Warning] ffmpeg not found on PATH; skipping audio muxing")
         return
 
     cmd = [
@@ -518,6 +581,7 @@ def merge_audio(video_path, audio_path, output_path):
     ]
     subprocess.run(cmd)
     print(f"  ✓ Merged audio: {output_path}")
+
 
 # ==========================================
 # MAIN
@@ -553,7 +617,9 @@ def main():
     print("\n" + "=" * 80)
     print("RENDERING VIDEO 2: WITH PASSIVE TONGUE")
     print("=" * 80)
-    render_video_with_passive_tongue(face_model, face_seq, tongue_rig, OUTPUT_VIDEO_PASSIVE_TONGUE)
+    render_video_with_passive_tongue(
+        face_model, face_seq, tongue_rig, OUTPUT_VIDEO_PASSIVE_TONGUE
+    )
 
     # Merge audio
     passive_with_audio = OUTPUT_VIDEO_PASSIVE_TONGUE.replace(".mp4", "_with_audio.mp4")
@@ -565,6 +631,7 @@ def main():
     print(f"✓ Dynamic tongue: {video_with_audio}")
     print(f"✓ Passive tongue: {passive_with_audio}")
     print("=" * 80)
+
 
 if __name__ == "__main__":
     main()

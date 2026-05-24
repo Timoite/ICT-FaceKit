@@ -24,6 +24,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from tongue_scripts.evaluation import evaluate_vsr_ver as ev
+from tongue_scripts.pipelines.run_render_dual_for_dataset import video_output_dir
 
 
 @dataclass(frozen=True)
@@ -85,11 +86,17 @@ def parse_textgrid_words(textgrid_path: Path, tier_name: str = "words") -> list[
 
 def ensure_ground_truth(textgrid_path: Path, ground_truth_path: Path) -> str:
     if ground_truth_path.is_file():
-        return ground_truth_path.read_text(encoding="utf-8", errors="ignore").strip().lower()
+        return (
+            ground_truth_path.read_text(encoding="utf-8", errors="ignore")
+            .strip()
+            .lower()
+        )
     words = parse_textgrid_words(textgrid_path, tier_name="words")
     text = " ".join(words).strip().lower()
     if not text:
-        raise RuntimeError(f"No words extracted from TextGrid words tier: {textgrid_path}")
+        raise RuntimeError(
+            f"No words extracted from TextGrid words tier: {textgrid_path}"
+        )
     ground_truth_path.parent.mkdir(parents=True, exist_ok=True)
     ground_truth_path.write_text(text + "\n", encoding="utf-8")
     return text
@@ -130,7 +137,8 @@ def render_dynamic_video(
         str(tongue_shift_seconds),
     ]
     run_cmd(cmd, cwd=TONGUE_SCRIPTS_DIR)
-    dynamic_with_audio = output_dir / f"{dataset_id}_with_tongue_with_audio.mp4"
+    render_dir = video_output_dir(output_dir, str(speaker_id), dataset_id)
+    dynamic_with_audio = render_dir / f"{dataset_id}_with_tongue_with_audio.mp4"
     if not dynamic_with_audio.is_file():
         raise RuntimeError(f"Rendered dynamic video not found: {dynamic_with_audio}")
     return dynamic_with_audio
@@ -153,9 +161,17 @@ def evaluate_video(
 ) -> EvalMetrics:
     video_path = video_path.resolve()
     textgrid_path = textgrid_path.resolve()
-    infer_script = PROJECT_ROOT / "ADFA_EVALUATION" / "Visual_Speech_Recognition_for_Multiple_Languages" / "infer.py"
+    infer_script = (
+        PROJECT_ROOT
+        / "ADFA_EVALUATION"
+        / "Visual_Speech_Recognition_for_Multiple_Languages"
+        / "infer.py"
+    )
     infer_pipeline_script = (
-        PROJECT_ROOT / "ADFA_EVALUATION" / "Visual_Speech_Recognition_for_Multiple_Languages" / "infer_pipeline.py"
+        PROJECT_ROOT
+        / "ADFA_EVALUATION"
+        / "Visual_Speech_Recognition_for_Multiple_Languages"
+        / "infer_pipeline.py"
     )
     if infer_mode == "segmented":
         hyp = ev.run_inference_segmented(
@@ -181,7 +197,9 @@ def evaluate_video(
     hyp_lower = hyp.lower()
     ver, _, _ = ev.calculate_ver(ground_truth, hyp_lower, vowel_mode=vowel_mode)
     wer_raw = ev.jiwer_wer(ground_truth, hyp_lower)
-    wer_norm = ev.jiwer_wer(ev.normalize_for_wer(ground_truth), ev.normalize_for_wer(hyp_lower))
+    wer_norm = ev.jiwer_wer(
+        ev.normalize_for_wer(ground_truth), ev.normalize_for_wer(hyp_lower)
+    )
     composite = 0.5 * ver + 0.5 * wer_norm
     return EvalMetrics(
         video=str(video_path),
@@ -211,7 +229,9 @@ def clear_improvement(
     d_wer = baseline.wer_norm - candidate.wer_norm
     r_comp = relative_improvement(baseline.composite, candidate.composite)
     r_wer = relative_improvement(baseline.wer_norm, candidate.wer_norm)
-    abs_rule = (d_comp >= abs_threshold and d_wer >= 0.0) or (d_wer >= abs_threshold and d_comp >= 0.0)
+    abs_rule = (d_comp >= abs_threshold and d_wer >= 0.0) or (
+        d_wer >= abs_threshold and d_comp >= 0.0
+    )
     rel_rule = r_comp >= rel_threshold and r_wer >= rel_threshold
     return bool(abs_rule or rel_rule)
 
@@ -317,17 +337,27 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--speaker-id", default="1")
     parser.add_argument(
         "--beat-root",
-        default=str(PROJECT_ROOT / "data" / "beat_cache" / "beat_english_v0.2.1" / "beat_english_v0.2.1"),
+        default=str(
+            PROJECT_ROOT
+            / "data"
+            / "beat_cache"
+            / "beat_english_v0.2.1"
+            / "beat_english_v0.2.1"
+        ),
     )
     parser.add_argument("--motion-path", default=None)
     parser.add_argument("--textgrid-path", default=None)
     parser.add_argument("--ground-truth-path", default=None)
-    parser.add_argument("--run-root", default=str(TONGUE_SCRIPTS_DIR / "outputs" / "lbfgsb_runs"))
+    parser.add_argument(
+        "--run-root", default=str(TONGUE_SCRIPTS_DIR / "outputs" / "lbfgsb_runs")
+    )
     parser.add_argument("--run-name", default=None)
     parser.add_argument("--python-bin", default=sys.executable)
 
     parser.add_argument("--tongue-shift-seconds", type=float, default=0.12)
-    parser.add_argument("--infer-mode", choices=["full", "segmented"], default="segmented")
+    parser.add_argument(
+        "--infer-mode", choices=["full", "segmented"], default="segmented"
+    )
     parser.add_argument("--detector", default="mediapipe")
     parser.add_argument("--vowel-mode", choices=["grouped", "exact"], default="grouped")
     parser.add_argument("--config-filename", default="configs/LRS3_V_WER19.1.ini")
@@ -351,8 +381,16 @@ def main() -> None:
     args = parse_args()
     beat_root = Path(args.beat_root)
     speaker_dir = beat_root / str(args.speaker_id)
-    motion_path = Path(args.motion_path) if args.motion_path else (TONGUE_SCRIPTS_DIR / "outputs" / f"{args.dataset_id}.npy")
-    textgrid_path = Path(args.textgrid_path) if args.textgrid_path else (speaker_dir / f"{args.dataset_id}.TextGrid")
+    motion_path = (
+        Path(args.motion_path)
+        if args.motion_path
+        else (TONGUE_SCRIPTS_DIR / "outputs" / f"{args.dataset_id}.npy")
+    )
+    textgrid_path = (
+        Path(args.textgrid_path)
+        if args.textgrid_path
+        else (speaker_dir / f"{args.dataset_id}.TextGrid")
+    )
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_name = args.run_name if args.run_name else f"{stamp}_{args.dataset_id}"
@@ -412,9 +450,11 @@ def main() -> None:
     candidate_rows: list[dict] = []
     for candidate in build_candidates():
         print("-" * 88)
-        print(f"[CANDIDATE {candidate.name}] tau=({candidate.tau_alveolar_mm},{candidate.tau_interdental_mm}) "
-              f"lambda_contact={candidate.lambda_contact} tip_bound={candidate.tip_delta_bounds_mm} "
-              f"window={candidate.contact_window_fraction}")
+        print(
+            f"[CANDIDATE {candidate.name}] tau=({candidate.tau_alveolar_mm},{candidate.tau_interdental_mm}) "
+            f"lambda_contact={candidate.lambda_contact} tip_bound={candidate.tip_delta_bounds_mm} "
+            f"window={candidate.contact_window_fraction}"
+        )
         cand_dir = run_dir / f"candidate_{candidate.name}"
         cand_dir.mkdir(parents=True, exist_ok=True)
         cand_motion = cand_dir / f"{args.dataset_id}_lbfgsb.npy"
@@ -466,8 +506,12 @@ def main() -> None:
             "metrics": cand_eval.__dict__,
             "delta_composite": float(d_comp),
             "delta_wer_norm": float(d_wer),
-            "rel_composite": float(relative_improvement(baseline_eval.composite, cand_eval.composite)),
-            "rel_wer_norm": float(relative_improvement(baseline_eval.wer_norm, cand_eval.wer_norm)),
+            "rel_composite": float(
+                relative_improvement(baseline_eval.composite, cand_eval.composite)
+            ),
+            "rel_wer_norm": float(
+                relative_improvement(baseline_eval.wer_norm, cand_eval.wer_norm)
+            ),
         }
         row["clear_improvement"] = clear_improvement(
             baseline=baseline_eval,
@@ -485,10 +529,14 @@ def main() -> None:
 
     improving = [r for r in candidate_rows if r["clear_improvement"]]
     pool = improving if improving else candidate_rows
-    best = min(pool, key=lambda r: (r["metrics"]["composite"], r["metrics"]["wer_norm"]))
+    best = min(
+        pool, key=lambda r: (r["metrics"]["composite"], r["metrics"]["wer_norm"])
+    )
 
     print("=" * 88)
-    print(f"Best candidate: {best['name']} (clear improvement pool size: {len(improving)})")
+    print(
+        f"Best candidate: {best['name']} (clear improvement pool size: {len(improving)})"
+    )
     print("=" * 88)
 
     # M5 reproducibility rerun for best config.
@@ -570,7 +618,9 @@ def main() -> None:
     )
     md_lines.append("")
     md_lines.append("## Candidates")
-    md_lines.append("| Name | VER | WER(norm) | Composite | ΔComposite | ΔWER(norm) | Clear |")
+    md_lines.append(
+        "| Name | VER | WER(norm) | Composite | ΔComposite | ΔWER(norm) | Clear |"
+    )
     md_lines.append("|---|---:|---:|---:|---:|---:|---:|")
     for row in candidate_rows:
         m = row["metrics"]

@@ -84,3 +84,7 @@ ADFA_EVALUATION/*.csv
 LRS3_V_WER19.1/
 lm_en_subword/
 ADFA_EVALUATION/data/beat_cache_speaker1/
+# Local environment / secrets
+.env
+.env.*
+!.env.example

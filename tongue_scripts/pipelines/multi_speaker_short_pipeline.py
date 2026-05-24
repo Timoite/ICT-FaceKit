@@ -19,34 +19,86 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from ADFA_EVALUATION.download_beat_data import download_speaker_data
+from tongue_scripts.pipelines.run_render_dual_for_dataset import (
+    tongue_motion_output_dir,
+    video_output_dir,
+)
 
-BEAT_ROOT = PROJECT_ROOT / "data" / "beat_cache" / "beat_english_v0.2.1" / "beat_english_v0.2.1"
+BEAT_ROOT = (
+    PROJECT_ROOT / "data" / "beat_cache" / "beat_english_v0.2.1" / "beat_english_v0.2.1"
+)
 OUTPUT_ROOT = PROJECT_ROOT / "tongue_scripts" / "outputs" / "multi_speaker"
 GT_DIR = OUTPUT_ROOT / "ground_truth"
 LAG_PLOT_DIR = OUTPUT_ROOT / "lag_plots"
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Batch multi-speaker active/passive tongue evaluation.")
-    p.add_argument("--num-speakers", type=int, default=5, help="How many speakers to process (5-10 recommended).")
+    p = argparse.ArgumentParser(
+        description="Batch multi-speaker active/passive tongue evaluation."
+    )
+    p.add_argument(
+        "--num-speakers",
+        type=int,
+        default=5,
+        help="How many speakers to process (5-10 recommended).",
+    )
     p.add_argument(
         "--speaker-pool",
         nargs="+",
         default=["2", "4", "5", "6", "7", "16", "19", "22", "25", "26"],
         help="Candidate speaker ids to sample from.",
     )
-    p.add_argument("--max-duration", type=float, default=56.0, help="Max clip duration (seconds) for short-list.")
+    p.add_argument(
+        "--max-duration",
+        type=float,
+        default=56.0,
+        help="Max clip duration (seconds) for short-list.",
+    )
     p.add_argument("--vowel-mode", choices=["grouped", "exact"], default="grouped")
     p.add_argument("--infer-mode", choices=["full", "segmented"], default="full")
-    p.add_argument("--report-path", default=str(PROJECT_ROOT / "tongue_scripts" / "outputs" / "vsr_composite_report.md"))
-    p.add_argument("--skip-download", action="store_true", help="Skip subset download stage.")
-    p.add_argument("--lag-window-seconds", type=float, default=5.0, help="Diagnostic lag-plot window duration in seconds.")
-    p.add_argument("--lag-max-seconds", type=float, default=0.5, help="Max lag search range in seconds.")
-    p.add_argument("--target-fps", type=float, default=50.0, help="Target FPS used for lag analysis.")
-    p.add_argument("--tongue-fps", type=float, default=50.0, help="Native tongue npy fps.")
+    p.add_argument(
+        "--report-path",
+        default=str(
+            PROJECT_ROOT / "tongue_scripts" / "outputs" / "vsr_composite_report.md"
+        ),
+    )
+    p.add_argument(
+        "--skip-download", action="store_true", help="Skip subset download stage."
+    )
+    p.add_argument(
+        "--lag-window-seconds",
+        type=float,
+        default=5.0,
+        help="Diagnostic lag-plot window duration in seconds.",
+    )
+    p.add_argument(
+        "--lag-max-seconds",
+        type=float,
+        default=0.5,
+        help="Max lag search range in seconds.",
+    )
+    p.add_argument(
+        "--target-fps",
+        type=float,
+        default=50.0,
+        help="Target FPS used for lag analysis.",
+    )
+    p.add_argument(
+        "--tongue-fps", type=float, default=50.0, help="Native tongue npy fps."
+    )
     p.add_argument("--beat-fps", type=float, default=60.0, help="Native BEAT json fps.")
-    p.add_argument("--smooth-frames", type=int, default=5, help="Moving average window for lag analysis.")
-    p.add_argument("--articulatory-scalar", type=float, default=0.20, help="Articulatory displacement scalar used for denormalization.")
+    p.add_argument(
+        "--smooth-frames",
+        type=int,
+        default=5,
+        help="Moving average window for lag analysis.",
+    )
+    p.add_argument(
+        "--articulatory-scalar",
+        type=float,
+        default=0.20,
+        help="Articulatory displacement scalar used for denormalization.",
+    )
     return p.parse_args()
 
 
@@ -63,18 +115,28 @@ def wav_duration_seconds(path: Path) -> float:
 def textgrid_to_transcript(textgrid_path: Path) -> str:
     import sys
 
-    vsr_dir = PROJECT_ROOT / "ADFA_EVALUATION" / "Visual_Speech_Recognition_for_Multiple_Languages"
+    vsr_dir = (
+        PROJECT_ROOT
+        / "ADFA_EVALUATION"
+        / "Visual_Speech_Recognition_for_Multiple_Languages"
+    )
     if str(vsr_dir) not in sys.path:
         sys.path.append(str(vsr_dir))
 
     import infer_pipeline as ip
 
     intervals = ip.parse_textgrid_words(str(textgrid_path))
-    words = [w.text.strip().lower() for w in intervals if w.text and w.text.strip() and w.text.strip() != "sp"]
+    words = [
+        w.text.strip().lower()
+        for w in intervals
+        if w.text and w.text.strip() and w.text.strip() != "sp"
+    ]
     return " ".join(words)
 
 
-def choose_short_instances(speaker_pool: list[str], max_duration: float, num_speakers: int) -> list[tuple[str, str, float]]:
+def choose_short_instances(
+    speaker_pool: list[str], max_duration: float, num_speakers: int
+) -> list[tuple[str, str, float]]:
     chosen: list[tuple[str, str, float]] = []
 
     for sid in speaker_pool:
@@ -85,7 +147,10 @@ def choose_short_instances(speaker_pool: list[str], max_duration: float, num_spe
         local_best: tuple[str, float] | None = None
         for wav in spk_dir.glob("*.wav"):
             stem = wav.stem
-            if not (spk_dir / f"{stem}.json").exists() or not (spk_dir / f"{stem}.TextGrid").exists():
+            if (
+                not (spk_dir / f"{stem}.json").exists()
+                or not (spk_dir / f"{stem}.TextGrid").exists()
+            ):
                 continue
             try:
                 d = wav_duration_seconds(wav)
@@ -123,16 +188,20 @@ def estimate_lag_and_plot(
     std = np.load(std_path).astype(np.float32).reshape(-1)
 
     denorm = (
-        raw_motion[:, :lap.NORM_VECTOR_COLS].astype(np.float32)
-        * std[:lap.NORM_VECTOR_COLS]
+        raw_motion[:, : lap.NORM_VECTOR_COLS].astype(np.float32)
+        * std[: lap.NORM_VECTOR_COLS]
         * float(args.articulatory_scalar)
-        + mu[:lap.NORM_VECTOR_COLS]
+        + mu[: lap.NORM_VECTOR_COLS]
     )
-    lip_motion = denorm[:, lap.TONGUE_COORD_COLS:lap.TONGUE_COORD_COLS + lap.LIP_COORD_COLS]
+    lip_motion = denorm[
+        :, lap.TONGUE_COORD_COLS : lap.TONGUE_COORD_COLS + lap.LIP_COORD_COLS
+    ]
     upper_point = lip_motion[:, 0:2]
     lower_point = lip_motion[:, 2:4]
     lip_aperture_art = np.linalg.norm(upper_point - lower_point, axis=1).reshape(-1, 1)
-    lip_aperture_art = lap.resample_matrix(lip_aperture_art, source_fps=args.tongue_fps, target_fps=args.target_fps).squeeze()
+    lip_aperture_art = lap.resample_matrix(
+        lip_aperture_art, source_fps=args.tongue_fps, target_fps=args.target_fps
+    ).squeeze()
 
     lip_aperture_bs = lap.load_blendshape_lip_aperture(
         json_path,
@@ -146,7 +215,9 @@ def estimate_lag_and_plot(
 
     t_art = np.arange(len(lip_aperture_art), dtype=np.float32) / float(args.target_fps)
     t_bs = np.arange(len(lip_aperture_bs), dtype=np.float32) / float(args.target_fps)
-    max_t = min(float(t_art[-1]) if len(t_art) else 0.0, float(t_bs[-1]) if len(t_bs) else 0.0)
+    max_t = min(
+        float(t_art[-1]) if len(t_art) else 0.0, float(t_bs[-1]) if len(t_bs) else 0.0
+    )
 
     intervals_all = lap.parse_textgrid_intervals(tg_path, "phones")
     non_empty = [iv for iv in intervals_all if iv.text.strip()]
@@ -165,7 +236,9 @@ def estimate_lag_and_plot(
     bs_windowed = lip_aperture_bs[bs_mask]
 
     max_lag_frames = int(round(float(args.lag_max_seconds) * float(args.target_fps)))
-    _, best_lag_frames, best_corr = lap.compute_lag_correlation(art_windowed, bs_windowed, max_lag_frames)
+    _, best_lag_frames, best_corr = lap.compute_lag_correlation(
+        art_windowed, bs_windowed, max_lag_frames
+    )
     best_lag_seconds = float(best_lag_frames) / float(args.target_fps)
 
     plot_path = LAG_PLOT_DIR / f"{dataset_id}_lag_window5s.png"
@@ -174,18 +247,30 @@ def estimate_lag_and_plot(
         [
             py,
             str(TONGUE_SCRIPTS_DIR / "analysis" / "lip_aperture_textgrid_plot.py"),
-            "--dataset-id", dataset_id,
-            "--beat-root", str(beat_root),
-            "--tongue-npy-dir", str(npy_path.parent),
-            "--target-fps", str(args.target_fps),
-            "--tongue-fps", str(args.tongue_fps),
-            "--beat-fps", str(args.beat_fps),
-            "--smooth-frames", str(args.smooth_frames),
-            "--articulatory-scalar", str(args.articulatory_scalar),
-            "--window-start", f"{window_start:.4f}",
-            "--window-end", f"{window_end:.4f}",
-            "--max-lag-seconds", str(args.lag_max_seconds),
-            "--output-path", str(plot_path),
+            "--dataset-id",
+            dataset_id,
+            "--beat-root",
+            str(beat_root),
+            "--tongue-npy-dir",
+            str(npy_path.parent),
+            "--target-fps",
+            str(args.target_fps),
+            "--tongue-fps",
+            str(args.tongue_fps),
+            "--beat-fps",
+            str(args.beat_fps),
+            "--smooth-frames",
+            str(args.smooth_frames),
+            "--articulatory-scalar",
+            str(args.articulatory_scalar),
+            "--window-start",
+            f"{window_start:.4f}",
+            "--window-end",
+            f"{window_end:.4f}",
+            "--max-lag-seconds",
+            str(args.lag_max_seconds),
+            "--output-path",
+            str(plot_path),
         ],
         cwd=TONGUE_SCRIPTS_DIR,
     )
@@ -216,7 +301,9 @@ def main() -> None:
         print("=== Skipping download stage ===")
 
     # 2) Pick short instances (one per speaker)
-    chosen = choose_short_instances(args.speaker_pool, args.max_duration, args.num_speakers)
+    chosen = choose_short_instances(
+        args.speaker_pool, args.max_duration, args.num_speakers
+    )
     if len(chosen) < args.num_speakers:
         print(f"[WARN] only found {len(chosen)} speakers <= {args.max_duration}s")
     if not chosen:
@@ -234,7 +321,9 @@ def main() -> None:
         spk_dir = BEAT_ROOT / sid
         wav_path = spk_dir / f"{dataset_id}.wav"
         tg_path = spk_dir / f"{dataset_id}.TextGrid"
-        npy_path = OUTPUT_ROOT / f"{dataset_id}.npy"
+        motion_dir = tongue_motion_output_dir(OUTPUT_ROOT, sid, dataset_id)
+        motion_dir.mkdir(parents=True, exist_ok=True)
+        npy_path = motion_dir / f"{dataset_id}.npy"
 
         gt_text = textgrid_to_transcript(tg_path)
         gt_path = GT_DIR / f"{dataset_id}.txt"
@@ -254,12 +343,14 @@ def main() -> None:
             )
 
         lag_info = estimate_lag_and_plot(dataset_id, spk_dir, npy_path, args)
-        lag_rows.append({
-            "speaker_id": sid,
-            "dataset_id": dataset_id,
-            "duration_sec": dur,
-            **lag_info,
-        })
+        lag_rows.append(
+            {
+                "speaker_id": sid,
+                "dataset_id": dataset_id,
+                "duration_sec": dur,
+                **lag_info,
+            }
+        )
         print(
             f"[LAG] {dataset_id}: best={lag_info['best_lag_seconds']:+.4f}s "
             f"({lag_info['best_lag_frames']} frames @ {args.target_fps:.1f}fps), "
@@ -269,7 +360,9 @@ def main() -> None:
         run(
             [
                 py,
-                str(TONGUE_SCRIPTS_DIR / "pipelines" / "run_render_dual_for_dataset.py"),
+                str(
+                    TONGUE_SCRIPTS_DIR / "pipelines" / "run_render_dual_for_dataset.py"
+                ),
                 "--dataset-id",
                 dataset_id,
                 "--speaker-id",
@@ -286,8 +379,9 @@ def main() -> None:
             cwd=TONGUE_SCRIPTS_DIR,
         )
 
-        active_video = OUTPUT_ROOT / f"{dataset_id}_with_tongue_with_audio.mp4"
-        passive_video = OUTPUT_ROOT / f"{dataset_id}_passive_tongue_with_audio.mp4"
+        render_dir = video_output_dir(OUTPUT_ROOT, sid, dataset_id)
+        active_video = render_dir / f"{dataset_id}_with_tongue_with_audio.mp4"
+        passive_video = render_dir / f"{dataset_id}_passive_tongue_with_audio.mp4"
 
         run(
             [
