@@ -12,6 +12,7 @@ import argparse
 import os
 import subprocess
 import tempfile
+from configparser import ConfigParser
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, List, Optional, Sequence, Tuple, cast
@@ -45,6 +46,10 @@ DEFAULT_MIN_SEGMENT_SECONDS = 4.0
 DEFAULT_MAX_SEGMENT_SECONDS = 12.0
 DEFAULT_MIN_SILENCE_SECONDS = 0.0  # <= 0 means auto-derive from TextGrid silence stats
 SHORT_PAUSE_FALLBACK_SECONDS = 0.08
+DEFAULT_BEAM_SIZE = 40
+DEFAULT_PENALTY = 0.0
+DEFAULT_CTC_WEIGHT = 0.1
+DEFAULT_LM_WEIGHT = 0.0
 
 
 @dataclass
@@ -68,6 +73,44 @@ class SilenceInterval:
         return self.start + 0.5 * self.duration
 
 
+@dataclass(frozen=True)
+class DecodeSettings:
+    beam_size: int = DEFAULT_BEAM_SIZE
+    penalty: float = DEFAULT_PENALTY
+    ctc_weight: float = DEFAULT_CTC_WEIGHT
+    lm_weight: float = DEFAULT_LM_WEIGHT
+
+
+def load_decode_settings(
+    decode_config: Optional[str] = None,
+    beam_size: Optional[int] = None,
+    penalty: Optional[float] = None,
+    ctc_weight: Optional[float] = None,
+    lm_weight: Optional[float] = None,
+) -> DecodeSettings:
+    settings = DecodeSettings()
+    if decode_config:
+        config_path = Path(decode_config)
+        if not config_path.is_file():
+            raise FileNotFoundError(f"Decode config not found: {config_path}")
+        config = ConfigParser()
+        config.read(config_path)
+        if config.has_section("decode"):
+            settings = DecodeSettings(
+                beam_size=config.getint("decode", "beam_size", fallback=settings.beam_size),
+                penalty=config.getfloat("decode", "penalty", fallback=settings.penalty),
+                ctc_weight=config.getfloat("decode", "ctc_weight", fallback=settings.ctc_weight),
+                lm_weight=config.getfloat("decode", "lm_weight", fallback=settings.lm_weight),
+            )
+
+    return DecodeSettings(
+        beam_size=settings.beam_size if beam_size is None else beam_size,
+        penalty=settings.penalty if penalty is None else penalty,
+        ctc_weight=settings.ctc_weight if ctc_weight is None else ctc_weight,
+        lm_weight=settings.lm_weight if lm_weight is None else lm_weight,
+    )
+
+
 class InferencePipeline(torch.nn.Module):
     def __init__(
         self,
@@ -77,8 +120,10 @@ class InferencePipeline(torch.nn.Module):
         detector: str = "mediapipe",
         face_track: bool = False,
         device: str = "cuda:0",
+        decode_settings: DecodeSettings | None = None,
     ):
         super().__init__()
+        decode_settings = decode_settings or DecodeSettings()
         self.device = device
         self.modality = modality
         self.dataloader = AVSRDataLoader(modality, detector=detector)
@@ -88,10 +133,10 @@ class InferencePipeline(torch.nn.Module):
             model_conf,
             rnnlm=None,
             rnnlm_conf=None,
-            penalty=0.0,
-            ctc_weight=0.1,
-            lm_weight=0.0,
-            beam_size=40,
+            penalty=decode_settings.penalty,
+            ctc_weight=decode_settings.ctc_weight,
+            lm_weight=decode_settings.lm_weight,
+            beam_size=decode_settings.beam_size,
             device=device,
         )
         if face_track and self.modality in ["video", "audiovisual"]:
@@ -650,6 +695,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-conf", type=str, default=MODEL_CONF, help="Model config JSON path")
     parser.add_argument("--model-path", type=str, default=MODEL_PATH, help="Model checkpoint path")
     parser.add_argument("--target-fps", type=int, default=DEFAULT_TARGET_FPS, help="Input fps for inference")
+    parser.add_argument(
+        "--decode-config",
+        type=str,
+        default=None,
+        help="Optional .ini file whose [decode] section supplies beam_size, penalty, ctc_weight, and lm_weight",
+    )
+    parser.add_argument("--beam-size", type=int, default=None, help="Override decode beam size")
+    parser.add_argument("--penalty", type=float, default=None, help="Override decode length penalty")
+    parser.add_argument("--ctc-weight", type=float, default=None, help="Override decode CTC weight")
+    parser.add_argument("--lm-weight", type=float, default=None, help="Override decode LM weight")
 
     parser.add_argument(
         "--textgrid-root",
@@ -725,6 +780,24 @@ def main() -> None:
     if not model_path.is_absolute():
         model_path = base_dir / model_path
 
+    decode_config = args.decode_config
+    if decode_config and not os.path.isabs(decode_config):
+        decode_config = str(base_dir / decode_config)
+    decode_settings = load_decode_settings(
+        decode_config=decode_config,
+        beam_size=args.beam_size,
+        penalty=args.penalty,
+        ctc_weight=args.ctc_weight,
+        lm_weight=args.lm_weight,
+    )
+    print(
+        "Decode settings: "
+        f"beam_size={decode_settings.beam_size}, "
+        f"penalty={decode_settings.penalty}, "
+        f"ctc_weight={decode_settings.ctc_weight}, "
+        f"lm_weight={decode_settings.lm_weight}"
+    )
+
     pipeline = InferencePipeline(
         modality="video",
         model_path=str(model_path),
@@ -732,6 +805,7 @@ def main() -> None:
         detector=args.detector,
         face_track=args.face_track,
         device=device,
+        decode_settings=decode_settings,
     )
 
     output_root = Path(args.output_dir)

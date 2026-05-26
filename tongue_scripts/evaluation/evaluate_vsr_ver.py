@@ -214,6 +214,7 @@ def run_inference(python_bin: str, infer_script: Path, config_filename: str, vid
 def run_inference_segmented(
     python_bin: str,
     infer_pipeline_script: Path,
+    config_filename: str,
     video_path: Path,
     detector: str,
     textgrid_path: Path,
@@ -230,6 +231,8 @@ def run_inference_segmented(
             str(video_path),
             "--output-dir",
             tmp_dir,
+            "--decode-config",
+            config_filename,
             "--textgrid-path",
             str(textgrid_path),
             "--target-segment-seconds",
@@ -300,6 +303,7 @@ def evaluate_videos(args: argparse.Namespace) -> tuple[str, list[dict]]:
                 hyp = run_inference_segmented(
                     python_bin=args.python_bin,
                     infer_pipeline_script=infer_pipeline_script,
+                    config_filename=args.config_filename,
                     video_path=video_path,
                     detector=args.detector,
                     textgrid_path=textgrid_path,

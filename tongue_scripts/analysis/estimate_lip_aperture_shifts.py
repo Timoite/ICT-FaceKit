@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import sqlite3
 import sys
 from datetime import datetime, timezone
@@ -30,6 +31,9 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from tongue_scripts.analysis import lip_aperture_textgrid_plot as lap
 from tongue_scripts.pipelines.run_render_dual_for_dataset import clip_instance_id
+from tongue_scripts.tongue_animation.face_model_io_trimesh import (
+    load_face_model_trimesh,
+)
 
 DEFAULT_BEAT_ROOT = (
     PROJECT_ROOT / "data" / "beat_cache" / "beat_english_v0.2.1" / "beat_english_v0.2.1"
@@ -333,6 +337,53 @@ def safe_corr(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.corrcoef(a, b)[0, 1])
 
 
+def load_blendshape_lip_aperture_with_model(
+    json_path: Path,
+    face_model,
+    beat_fps: float,
+    target_fps: float,
+) -> np.ndarray:
+    """Compute mesh lip aperture from BEAT weights using an already-loaded face model."""
+    with json_path.open("r", encoding="utf-8") as handle:
+        anim_data = json.load(handle)
+
+    beat_names = anim_data["names"]
+    frames = anim_data["frames"]
+    expr_names = face_model.expression_names
+    expr_to_idx = {name: i for i, name in enumerate(expr_names)}
+
+    source = np.zeros((len(frames), len(expr_names)), dtype=np.float32)
+    for frame_idx, frame in enumerate(frames):
+        weights = frame.get("weights", [])
+        for beat_idx, weight in enumerate(weights):
+            if beat_idx >= len(beat_names):
+                break
+            for mapped_name in lap.map_beat_to_ict_names(beat_names[beat_idx]):
+                idx = expr_to_idx.get(mapped_name)
+                if idx is not None:
+                    source[frame_idx, idx] = float(weight)
+
+    n_verts = len(face_model.neutral_verts)
+    if lap.UPPER_LIP_VERTEX_IDX >= n_verts or lap.LOWER_LIP_VERTEX_IDX >= n_verts:
+        raise RuntimeError(
+            f"Lip vertex index out of range: upper={lap.UPPER_LIP_VERTEX_IDX}, "
+            f"lower={lap.LOWER_LIP_VERTEX_IDX}, n_verts={n_verts}"
+        )
+
+    lip_aperture = np.zeros(len(source), dtype=np.float32)
+    for frame_idx, row in enumerate(source):
+        weights = {name: float(val) for name, val in zip(expr_names, row) if val != 0.0}
+        verts = face_model.deform(weights)
+        upper = verts[lap.UPPER_LIP_VERTEX_IDX]
+        lower = verts[lap.LOWER_LIP_VERTEX_IDX]
+        lip_aperture[frame_idx] = float(np.linalg.norm(upper - lower))
+
+    lip_aperture = lip_aperture.reshape(-1, 1)
+    return lap.resample_matrix(
+        lip_aperture, source_fps=beat_fps, target_fps=target_fps
+    ).squeeze()
+
+
 def estimate_one(
     *,
     speaker_id: str,
@@ -340,6 +391,7 @@ def estimate_one(
     json_path: Path,
     textgrid_path: Path,
     motion_path: Path,
+    face_model,
     args: argparse.Namespace,
 ) -> dict:
     art = load_articulatory_lip_aperture(
@@ -350,9 +402,9 @@ def estimate_one(
         tongue_fps=float(args.tongue_fps),
         target_fps=float(args.target_fps),
     )
-    bs = lap.load_blendshape_lip_aperture(
+    bs = load_blendshape_lip_aperture_with_model(
         json_path,
-        Path(args.face_model_dir),
+        face_model,
         beat_fps=float(args.beat_fps),
         target_fps=float(args.target_fps),
     )
@@ -508,6 +560,8 @@ def main() -> None:
     print(f"Writing SQLite cache: {db_path}")
     print(f"Writing CSV export:    {csv_path}")
 
+    face_model = None
+
     ok = skipped_existing = skipped_missing_motion = errors = 0
     for speaker_id, dataset_id, json_path in items:
         if not args.overwrite and row_exists(conn, speaker_id, dataset_id):
@@ -536,12 +590,15 @@ def main() -> None:
             continue
 
         try:
+            if face_model is None:
+                face_model = load_face_model_trimesh(str(Path(args.face_model_dir)))
             row = estimate_one(
                 speaker_id=speaker_id,
                 dataset_id=dataset_id,
                 json_path=json_path,
                 textgrid_path=textgrid_path,
                 motion_path=motion_path,
+                face_model=face_model,
                 args=args,
             )
             upsert_row(conn, row)
