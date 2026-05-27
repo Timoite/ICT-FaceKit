@@ -18,6 +18,12 @@ from tongue_scripts.real_video.smirk_flame_to_arkit import (
     fit_coefficients,
     fit_smirk_vertices_file,
 )
+from tongue_scripts.pipelines.run_fadg0_real_video_pipeline import (
+    apply_render_shift,
+    discover_videos,
+    resample_sequence_to_frames,
+    shift_tongue_motion_file,
+)
 from tongue_scripts.tongue_animation.generate_tongue_animation import load_blendshape_json_sequence
 
 
@@ -227,6 +233,58 @@ class RealVideoPipelineTests(unittest.TestCase):
             self.assertTrue(diagnostics_json.is_file())
             np.testing.assert_allclose(coeffs[1], [0.25, 0.5], atol=1e-4)
             self.assertFalse(np.any(diagnostics.failed_frame_mask))
+
+    def test_discover_videos_defaults_to_first_sorted_mp4_for_smoke_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "b.mp4").write_bytes(b"")
+            (root / "a.mp4").write_bytes(b"")
+            (root / "ignore.txt").write_text("nope", encoding="utf-8")
+
+            videos = discover_videos(video=None, video_dir=root, smoke=True)
+
+        self.assertEqual([path.name for path in videos], ["a.mp4"])
+
+    def test_discover_videos_can_return_all_sorted_mp4s(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "b.mp4").write_bytes(b"")
+            (root / "a.mp4").write_bytes(b"")
+
+            videos = discover_videos(video=None, video_dir=root, smoke=False)
+
+        self.assertEqual([path.name for path in videos], ["a.mp4", "b.mp4"])
+
+    def test_resample_sequence_to_frames_preserves_target_frame_count(self) -> None:
+        seq = np.arange(8, dtype=np.float32).reshape(4, 2)
+
+        out = resample_sequence_to_frames(seq, target_frames=2, source_fps=50.0, target_fps=25.0)
+
+        self.assertEqual(out.shape, (2, 2))
+        np.testing.assert_allclose(out[0], seq[0], atol=1e-6)
+
+    def test_apply_render_shift_uses_renderer_sign_convention(self) -> None:
+        seq = np.arange(5, dtype=np.float32).reshape(5, 1)
+
+        delayed = apply_render_shift(seq, shift_seconds=0.08, fps=25.0)
+        advanced = apply_render_shift(seq, shift_seconds=-0.08, fps=25.0)
+
+        np.testing.assert_array_equal(delayed[:, 0], [0, 0, 0, 1, 2])
+        np.testing.assert_array_equal(advanced[:, 0], [2, 3, 4, 4, 4])
+
+    def test_shift_tongue_motion_file_applies_subframe_render_shift_at_50fps(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            src = root / "tongue.npy"
+            dst = root / "tongue_shifted.npy"
+            motion = np.arange(5, dtype=np.float32).reshape(5, 1)
+            np.save(src, motion)
+
+            shift_tongue_motion_file(src, dst, shift_seconds=-0.02, tongue_fps=50.0)
+
+            shifted = np.load(dst)
+
+        np.testing.assert_array_equal(shifted[:, 0], [1, 2, 3, 4, 4])
 
 
 if __name__ == "__main__":
