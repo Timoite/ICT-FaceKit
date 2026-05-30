@@ -1,0 +1,1 @@
+/research/milsrg1/user_workspace/ht467/smirk_task/outputs/vocasets_grid_search/FaceTalk_170725_00137_TA_sentence01/std_scalar_0p20_0p40_step0p01_th1p40_rot0/grid_search_summary.md

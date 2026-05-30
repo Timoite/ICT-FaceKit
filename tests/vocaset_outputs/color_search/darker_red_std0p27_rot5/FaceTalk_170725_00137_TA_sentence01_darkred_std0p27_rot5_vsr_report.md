@@ -1,0 +1,1 @@
+/research/milsrg1/user_workspace/ht467/smirk_task/outputs/vocasets_color_search/darker_red_std0p27_rot5/FaceTalk_170725_00137_TA/sentence01/FaceTalk_170725_00137_TA_sentence01_darkred_std0p27_rot5_vsr_report.md
