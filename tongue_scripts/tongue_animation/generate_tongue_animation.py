@@ -295,7 +295,13 @@ class FaceKitTongueRig:
 # ==========================================
 # PART 3: RENDERERS
 # ==========================================
-def run_matplotlib_debug(tongue_rig, ema_seq):
+def sagittal_profile_points(vertices, x_abs_threshold=1.0):
+    """Return (z, y) points near the sagittal cut plane."""
+    midline = np.abs(vertices[:, 0]) < x_abs_threshold
+    return vertices[midline][:, [2, 1]]
+
+
+def run_matplotlib_debug(tongue_rig, ema_seq, face_model=None, face_seq=None):
     import matplotlib.pyplot as plt
     from matplotlib.animation import FuncAnimation, FFMpegWriter
 
@@ -307,8 +313,28 @@ def run_matplotlib_debug(tongue_rig, ema_seq):
     ax.set_title("Hybrid Rig Debug")
     
     # Static
-    midline = np.abs(tongue_rig.vertices_rest[:, 0]) < 1.0
-    rest_prof = tongue_rig.vertices_rest[midline][:, [2, 1]] 
+    rest_prof = sagittal_profile_points(tongue_rig.vertices_rest, x_abs_threshold=1.0)
+    scat_head = None
+    if face_model is not None:
+        neutral_head_prof = sagittal_profile_points(face_model.neutral_verts, x_abs_threshold=0.45)
+        if len(neutral_head_prof) > 0:
+            ax.scatter(
+                neutral_head_prof[:, 0],
+                neutral_head_prof[:, 1],
+                s=0.7,
+                c="lightgrey",
+                alpha=0.10,
+                label="neutral head slice",
+            )
+        if face_seq is not None:
+            scat_head = ax.scatter(
+                [],
+                [],
+                s=0.8,
+                c="dimgray",
+                alpha=0.16,
+                label="deformed head slice",
+            )
     ax.scatter(rest_prof[:, 0], rest_prof[:, 1], s=2, c='lightgrey', alpha=0.3)
     
     # Dynamic
@@ -320,16 +346,27 @@ def run_matplotlib_debug(tongue_rig, ema_seq):
     def update(i):
         verts, bone_mats, cur_spline = tongue_rig.deform(ema_seq[i])
         
-        prof = verts[midline][:, [2, 1]]
+        prof = sagittal_profile_points(verts, x_abs_threshold=1.0)
         scat_mesh.set_offsets(prof)
         scat_anchors.set_offsets(ema_seq[i][:, [2, 1]])
         scat_bones.set_offsets(bone_mats[:, :3, 3][:, [2, 1]])
+
+        if scat_head is not None and face_model is not None and face_seq is not None:
+            face_i = min(i, len(face_seq) - 1)
+            weights = {name: val for name, val in zip(face_model.expression_names, face_seq[face_i])}
+            head_verts = face_model.deform(weights).copy()
+            head_verts[tongue_rig.global_indices] = verts
+            head_prof = sagittal_profile_points(head_verts, x_abs_threshold=0.45)
+            scat_head.set_offsets(head_prof)
         
         u_plot = np.linspace(0, 1, 100)
         pts = cur_spline(u_plot)[:, [2, 1]]
         line_spline.set_data(pts[:, 0], pts[:, 1])
         
-        return scat_mesh, scat_anchors, scat_bones, line_spline
+        artists = [scat_mesh, scat_anchors, scat_bones, line_spline]
+        if scat_head is not None:
+            artists.append(scat_head)
+        return artists
 
     anim = FuncAnimation(fig, update, frames=frames, interval=1000/FPS, blit=False)
     anim.save(TEMP_VIDEO, writer=FFMpegWriter(fps=FPS))

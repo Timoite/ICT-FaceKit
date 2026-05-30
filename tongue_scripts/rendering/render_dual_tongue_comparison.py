@@ -269,6 +269,7 @@ def render_video_with_dynamic_tongue(
     output_path,
     fps=FPS,
     max_seconds=MAX_SECONDS,
+    tongue_color=(1.0, 0.6, 0.6, 1.0),
 ):
     """Render video with dynamic tongue driven by EMA motion."""
     print(f"Rendering video with DYNAMIC tongue to {output_path}...")
@@ -298,7 +299,7 @@ def render_video_with_dynamic_tongue(
         alphaMode="OPAQUE",
     )
     mat_tongue = pyrender.MetallicRoughnessMaterial(
-        baseColorFactor=[1.0, 0.6, 0.6, 1.0],
+        baseColorFactor=list(tongue_color),
         metallicFactor=0.0,
         roughnessFactor=0.2,
         alphaMode="OPAQUE",
